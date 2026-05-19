@@ -1,0 +1,14 @@
+.DS_Store
+node_modules/
+*.log
+.env
+.env.local
+
+# In case anyone runs node directly from the repo
+.npm/
+npm-debug.log*
+
+# IDE
+.idea/
+.vscode/
+*.swp
