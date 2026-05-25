@@ -1008,6 +1008,10 @@
     transition: box-shadow 0.18s, background 0.18s;
   }
   .md mark.anno:hover { box-shadow: 0 0 0 2px var(--highlight-border); }
+  /* Belt + braces: never render a yellow stripe for an empty highlight. */
+  .md mark.anno:empty { display: none; }
+  .md li > mark.anno:only-child:empty,
+  .md p > mark.anno:only-child:empty { display: none; }
   .inline-anno-popover {
     position: absolute;
     z-index: 1400;
@@ -1455,7 +1459,22 @@
   .sent-card .sent-reply-text {
     white-space: pre-wrap;
     word-break: break-word;
+    flex: 1; min-width: 0;
   }
+  .sent-card .sent-reply.collapsible {
+    flex-wrap: wrap;
+  }
+  .sent-card .sent-reply-text .ellipsis { color: var(--muted); }
+  .sent-card .reply-toggle {
+    margin-top: 4px;
+    font: inherit; font-size: 11px;
+    background: transparent; color: var(--accent);
+    border: 1px solid var(--border); border-radius: 4px;
+    padding: 1px 8px;
+    cursor: pointer;
+    align-self: flex-start;
+  }
+  .sent-card .reply-toggle:hover { border-color: var(--accent); background: var(--accent-bg); }
   .sent-card .status-row {
     margin-top: 6px;
     display: flex; gap: 6px;
@@ -3738,6 +3757,31 @@
       // If wrapping fails (e.g. quote crosses a block-level boundary),
       // silently skip — better no highlight than broken DOM.
       console.warn("highlight failed for quote:", a.quote.slice(0, 60), err);
+      return;
+    }
+    // Multi-node quotes that cross blank lines / empty <li> items leave
+    // <mark.anno> wrappers around children whose visible text is just
+    // whitespace — they render as ugly yellow stripes on empty bullets.
+    // Strip any nested <mark> whose own text content is whitespace-only,
+    // unwrapping it so the empty element stays plain.
+    const innerMarks = mark.querySelectorAll("mark.anno, mark");
+    innerMarks.forEach(m => {
+      if (!m.textContent || !m.textContent.trim()) {
+        // Unwrap: replace the mark with its children
+        const parent = m.parentNode;
+        while (m.firstChild) parent.insertBefore(m.firstChild, m);
+        parent.removeChild(m);
+      }
+    });
+    // Also: if the outer mark wrapped only whitespace + an empty <li>, the
+    // outer mark itself can be a strip. Unwrap it too in that case.
+    if (mark.children.length && Array.from(mark.children).every(c =>
+      (c.tagName === "LI" || c.tagName === "P" || c.tagName === "BR")
+      && !(c.textContent || "").trim()
+    )) {
+      const parent = mark.parentNode;
+      while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+      parent.removeChild(mark);
     }
   }
 
@@ -3822,9 +3866,38 @@
     }
   }
 
+  // One-time delegated click handler for collapse/expand on sent-reply.
+  function wireSentReplyToggle(container) {
+    if (!container || container.dataset.toggleWired) return;
+    container.dataset.toggleWired = "1";
+    container.addEventListener("click", (e) => {
+      const btn = e.target.closest(".reply-toggle");
+      if (!btn) return;
+      e.stopPropagation();
+      const row = btn.closest(".sent-reply.collapsible");
+      if (!row) return;
+      const collapsed = row.dataset.collapsed === "1";
+      const preview = row.querySelector(".sent-reply-text.preview");
+      const full = row.querySelector(".sent-reply-text.full");
+      if (collapsed) {
+        if (preview) preview.hidden = true;
+        if (full) full.hidden = false;
+        row.dataset.collapsed = "0";
+        btn.textContent = "Show less ↑";
+      } else {
+        if (preview) preview.hidden = false;
+        if (full) full.hidden = true;
+        row.dataset.collapsed = "1";
+        btn.textContent = "Show more ↓";
+      }
+    });
+  }
+
   function renderSentAnnotations(list) {
     sentCount.textContent = String(list.length);
     if (railSentCount) railSentCount.textContent = String(list.length);
+    wireSentReplyToggle(sentList);
+    wireSentReplyToggle(railSentList);
     if (list.length === 0) {
       const emptyHtml = `<div class="sent-empty">No annotations sent yet for this session. Add some on the right, click "Send to Claude", then run <code>/rano</code> in the CLI to see replies appear here.</div>`;
       sentList.innerHTML = emptyHtml;
@@ -3869,11 +3942,29 @@
       if (replies.length === 0) {
         repliesHtml = `<div class="sent-reply"><span class="who">Claude:</span><span class="sent-reply-text" style="color:var(--muted);font-style:italic">No reply yet — run <code>/rano</code> in the CLI.</span></div>`;
       } else {
+        // Long replies (like /rano replays) are collapsed by default — show
+        // first ~200 chars + a toggle to expand. Threshold tuned to avoid
+        // collapsing short acks like "👍".
+        const COLLAPSE_THRESHOLD = 260;
+        const PREVIEW_LEN = 200;
         repliesHtml = replies.map(r => {
           const role = r.role || "agent";
           const who = role === "agent" ? "Claude" : role === "user" ? "You" : role;
           const text = r.content || r.message || r.text || "";
-          return `<div class="sent-reply"><span class="who">${escapeHtml(who)}:</span><span class="sent-reply-text">${escapeHtml(text)}</span></div>`;
+          if (text.length <= COLLAPSE_THRESHOLD) {
+            return `<div class="sent-reply"><span class="who">${escapeHtml(who)}:</span><span class="sent-reply-text">${escapeHtml(text)}</span></div>`;
+          }
+          // Slice on a word boundary near PREVIEW_LEN, then leave the full
+          // text in a hidden sibling so the toggle button can swap visibility.
+          let cut = text.lastIndexOf(" ", PREVIEW_LEN);
+          if (cut < PREVIEW_LEN - 60) cut = PREVIEW_LEN;
+          const preview = text.slice(0, cut).trimEnd();
+          return `<div class="sent-reply collapsible" data-collapsed="1">
+              <span class="who">${escapeHtml(who)}:</span>
+              <span class="sent-reply-text preview">${escapeHtml(preview)}<span class="ellipsis">…</span></span>
+              <span class="sent-reply-text full" hidden>${escapeHtml(text)}</span>
+              <button class="reply-toggle" type="button">Show more ↓</button>
+            </div>`;
         }).join("");
       }
 
