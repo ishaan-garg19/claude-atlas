@@ -16,19 +16,40 @@
   :root {
     --bg: #ffffff; --fg: #1f2328; --muted: #57606a; --border: #d0d7de;
     --accent: #0969da; --accent-bg: #ddf4ff; --code-bg: #f6f8fa;
-    --user-bg: #f0f6ff; --assistant-bg: transparent; --thinking-bg: #fff8e1;
-    --tool-bg: #f6f8fa; --highlight: #fff8c5; --highlight-border: #d4a72c;
-    --selection-bg: #b6e3ff; --selection-fg: #0a3052;
+    /* Liquid Glass — translucent surfaces with strong backdrop blur so the
+       constellation behind them shows through with saturated color bleed. */
+    --user-bg: rgba(221, 238, 255, 0.55);
+    --assistant-bg: rgba(243, 244, 246, 0.50);
+    --thinking-bg: rgba(255, 248, 225, 0.55);
+    --glass-bg: rgba(255, 255, 255, 0.55);
+    --glass-bg-strong: rgba(255, 255, 255, 0.72);
+    --glass-border: rgba(255, 255, 255, 0.5);
+    --glass-shadow: 0 8px 32px rgba(15, 23, 42, 0.10);
+    --tool-bg: #f6f8fa;
+    /* Annotation highlight — soft sage (Notion-style, easy on eyes). */
+    --highlight: #d4edda; --highlight-border: #198754;
+    /* Text selection — warm cream, complementary to the sage highlight. */
+    --selection-bg: #fef3c7; --selection-fg: #78350f;
+    /* Active annotation (icon hovered or popover open). */
+    --highlight-active: #b7e4c7; --highlight-active-border: #14532d;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #0d1117; --fg: #e6edf3; --muted: #8b949e; --border: #30363d;
       --accent: #58a6ff; --accent-bg: #1f2d3d; --code-bg: #161b22;
-      --user-bg: #1c2735; --assistant-bg: transparent;
+      --user-bg: rgba(31, 58, 95, 0.42);
+      --assistant-bg: rgba(22, 27, 34, 0.40);
+      --thinking-bg: rgba(26, 29, 46, 0.50);
+      --glass-bg: rgba(22, 27, 34, 0.55);
+      --glass-bg-strong: rgba(22, 27, 34, 0.72);
+      --glass-border: rgba(255, 255, 255, 0.08);
+      --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
       --thinking-bg: #1a1d2e;
       --thinking-accent: #818cf8;
-      --tool-bg: #161b22; --highlight: #4a3f00; --highlight-border: #d4a72c;
-      --selection-bg: #1f6feb; --selection-fg: #ffffff;
+      --tool-bg: #161b22;
+      --highlight: #1c3a2e; --highlight-border: #86efac;
+      --selection-bg: #3f2d0e; --selection-fg: #fde68a;
+      --highlight-active: #14532d; --highlight-active-border: #bbf7d0;
     }
   }
   /* Browser default selection is nearly invisible on the dark theme,
@@ -46,6 +67,24 @@
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); }
+  /* Constellation background — sits behind everything, ignores mouse so
+     events still hit messages/links. Particles + lines drawn by JS. */
+  #bg-canvas {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.75;
+  }
+  @media (prefers-color-scheme: dark) {
+    #bg-canvas { opacity: 0.85; }
+  }
+  /* Hoist real content above the canvas. Only set z-index — do NOT touch
+     `position`, because header is sticky and rail is fixed by design. */
+  body > main { z-index: 1; }
+  body > main { position: relative; } /* main was static; relative is safe */
   body {
     font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     --rail-w: 300px;
@@ -212,9 +251,39 @@
   /* ---- Compact rail session cards ---- */
   .rail-list .picker-item {
     width: 100%;
-    padding: 6px 8px;
+    padding: 8px 10px;
     gap: 3px;
-    margin-bottom: 2px;
+    margin-bottom: 4px;
+    border-radius: 8px;
+    /* Faint frosted layer so each card reads as its own surface against the
+       fully-transparent rail, without the heavy boxed look. */
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    transition: background 0.12s, border-color 0.12s;
+  }
+  .rail-list .picker-item:hover {
+    background: rgba(255, 255, 255, 0.10) !important;
+    border-color: rgba(255, 255, 255, 0.14);
+  }
+  .rail-list .picker-item.active {
+    background: rgba(56, 139, 253, 0.16) !important;
+    border-color: rgba(56, 139, 253, 0.45);
+  }
+  @media (prefers-color-scheme: light) {
+    .rail-list .picker-item {
+      background: rgba(255, 255, 255, 0.55);
+      border-color: rgba(15, 23, 42, 0.08);
+    }
+    .rail-list .picker-item:hover {
+      background: rgba(255, 255, 255, 0.75) !important;
+      border-color: rgba(15, 23, 42, 0.16);
+    }
+    .rail-list .picker-item.active {
+      background: rgba(9, 105, 218, 0.10) !important;
+      border-color: rgba(9, 105, 218, 0.40);
+    }
   }
   .rail-list .picker-item .preview {
     font-size: 12.5px;
@@ -680,6 +749,47 @@
     display: none;
   }
   .token-popover.open { display: block; }
+
+  .bg-popover {
+    position: fixed;
+    bottom: 44px;
+    right: 16px;
+    z-index: 1600;
+    background: var(--glass-bg-strong);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    box-shadow: var(--glass-shadow);
+    backdrop-filter: blur(22px) saturate(180%);
+    -webkit-backdrop-filter: blur(22px) saturate(180%);
+    padding: 4px;
+    display: none;
+    min-width: 220px;
+    max-height: 80vh;
+    overflow-y: auto;
+  }
+  .bg-popover.open { display: block; }
+  .bg-popover button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: none;
+    color: var(--fg);
+    font: inherit;
+    font-size: 13px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .bg-popover button:hover { background: rgba(255,255,255,0.08); }
+  .bg-popover button.active {
+    background: rgba(56,139,253,0.18);
+    color: var(--accent);
+    font-weight: 600;
+  }
+  @media (prefers-color-scheme: light) {
+    .bg-popover button:hover { background: rgba(15,23,42,0.06); }
+  }
   .token-popover .usage-card {
     margin: 0;
     border: none;
@@ -830,7 +940,13 @@
     100% { box-shadow: 0 0 0 0 transparent; }
   }
 
-  main { max-width: 900px; margin: 0 auto; padding: 24px 24px 120px; }
+  /* Use the full content width (rail aside is handled via body padding-left).
+     Cap to a comfortable maximum on huge monitors so lines don't span miles. */
+  main {
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 24px 36px 140px;
+  }
 
   .load-earlier-row {
     display: flex; gap: 8px; align-items: center;
@@ -866,13 +982,50 @@
   }
 
   .msg {
-    border-radius: 10px;
-    padding: 12px 16px;
-    margin-bottom: 18px;
-    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 10px 18px;
+    margin-bottom: 6px;
+    border: none;
+    max-width: 78%;
+    box-sizing: border-box;
+    word-wrap: break-word;
+    position: relative;
+    line-height: 1.55;
+    backdrop-filter: blur(12px) saturate(140%);
+    -webkit-backdrop-filter: blur(12px) saturate(140%);
   }
-  .msg-user { background: var(--user-bg); }
-  .msg-assistant { background: var(--assistant-bg); }
+  /* iMessage-style bubble: no border, soft fill + 1px inset hairline for
+     subtle definition. The matching corner gets a small "tail" radius. */
+  .msg-user {
+    background: var(--user-bg);
+    margin-left: auto;
+    margin-right: 0;
+    border-bottom-right-radius: 6px;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.05);
+  }
+  .msg-assistant {
+    background: var(--assistant-bg);
+    margin-left: 0;
+    margin-right: auto;
+    border-bottom-left-radius: 6px;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.04);
+  }
+  @media (prefers-color-scheme: dark) {
+    .msg-user { box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04), 0 1px 3px rgba(0,0,0,0.4); }
+    .msg-assistant { box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03), 0 1px 3px rgba(0,0,0,0.3); }
+  }
+  /* Group consecutive same-role messages tighter so they read as one
+     conversation block rather than separate cards. */
+  .msg-user + .msg-user,
+  .msg-assistant + .msg-assistant {
+    margin-top: 2px;
+  }
+  /* Long code/preformatted blocks shouldn't be capped — let them break out of
+     the bubble's 78% width on wide screens so we don't lose readability. */
+  .msg pre,
+  .msg .code-block {
+    max-width: 100%;
+  }
   .msg.collapsed > *:not(.msg-head):not(.msg-collapsed-hint) {
     display: none !important;
   }
@@ -887,61 +1040,81 @@
   .msg .fold-toggle {
     cursor: pointer;
     color: var(--muted);
-    background: var(--code-bg);
-    border: 1px solid var(--border);
-    font-size: 18px;
-    line-height: 1;
-    width: 32px;
-    height: 32px;
+    background: transparent;
+    border: none;
+    width: 18px;
+    height: 18px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: 8px;
+    border-radius: 4px;
     font: inherit;
-    font-size: 18px;
+    font-size: 12px;
+    line-height: 1;
+    padding: 0;
     user-select: none;
-    transition: transform 0.15s ease, background 0.12s, color 0.12s, border-color 0.12s;
+    transition: transform 0.15s ease, background 0.12s, color 0.12s;
     flex-shrink: 0;
+    opacity: 0;
   }
+  .msg:hover .fold-toggle { opacity: 0.7; }
   .msg .fold-toggle:hover {
-    background: var(--accent-bg);
     color: var(--accent);
-    border-color: var(--accent);
+    opacity: 1;
   }
   .msg.collapsed .fold-toggle { transform: rotate(-90deg); }
+  /* Chat-style header: name is readable, timestamp hidden until hover.
+     Hides whole header when consecutive bubbles share a role (avatar + name
+     are redundant for follow-up messages from the same speaker). */
   .msg-head {
     font-size: 13px; font-weight: 600;
-    color: var(--fg); margin-bottom: 8px;
+    color: var(--fg); margin-bottom: 6px;
     display: flex; align-items: center; gap: 8px;
+    cursor: pointer;
   }
+  .msg-user .msg-head { color: var(--accent); }
+  .msg-assistant .msg-head { color: #16a34a; }
   .msg-head .timestamp {
-    font-size: 11px;
+    font-size: 10.5px;
     font-weight: 400;
     color: var(--muted);
     font-variant-numeric: tabular-nums;
+    opacity: 0;
+    transition: opacity 0.12s;
   }
+  .msg:hover .msg-head .timestamp { opacity: 1; }
   .msg-head .head-right {
     margin-left: auto;
     display: inline-flex;
     align-items: center;
-    gap: 10px;
+    gap: 6px;
   }
   .avatar {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 24px;
+    width: 22px;
+    height: 22px;
     border-radius: 50%;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 700;
     color: #fff;
     flex-shrink: 0;
   }
   .avatar.user { background: var(--accent); }
-  .avatar.assistant { background: #d97706; }
-  .msg-user .msg-head { color: var(--accent); }
-  .msg-assistant .msg-head { color: #d97706; }
+  .avatar.assistant { background: #16a34a; }
+  /* Hide name + avatar on a follow-up message from the same speaker —
+     just the bubble, no repeated metadata. The fold control + timestamp
+     still live in the head-right block so they're still accessible. */
+  .msg-user + .msg-user .msg-head > :not(.head-right),
+  .msg-assistant + .msg-assistant .msg-head > :not(.head-right) {
+    display: none;
+  }
+  .msg-user + .msg-user .msg-head,
+  .msg-assistant + .msg-assistant .msg-head {
+    margin-bottom: 0;
+    min-height: 0;
+  }
 
   .md { overflow-wrap: anywhere; }
   .md > :first-child { margin-top: 0; }
@@ -1008,21 +1181,204 @@
     transition: box-shadow 0.18s, background 0.18s;
   }
   .md mark.anno:hover { box-shadow: 0 0 0 2px var(--highlight-border); }
-  /* Belt + braces: never render a yellow stripe for an empty highlight. */
+
+  /* Margin annotation marker — small 💬 icon in the gutter aligned with the
+     highlight. Resting state: just the icon. Hover: a styled tooltip with
+     the comment text appears next to it. Click: full inline popover. */
+  .anno-note {
+    position: absolute;
+    width: 28px; height: 28px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    color: inherit;
+    border: 1px solid var(--highlight-border);
+    border-radius: 50%;
+    font: inherit;
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    z-index: 5;
+    transition: transform 0.12s, box-shadow 0.12s, background 0.12s;
+  }
+  .anno-note:hover {
+    transform: scale(1.1);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    background: var(--highlight);
+    z-index: 20;
+  }
+  .anno-note .anno-note-icon { pointer-events: none; }
+  /* Tooltip — hidden by default, shown on hover. Sits outside the icon so
+     it can be wider than the 28px circle. */
+  .anno-note .anno-note-tip {
+    position: absolute;
+    background: var(--glass-bg-strong);
+    color: var(--fg);
+    border: 1px solid var(--glass-border);
+    border-radius: 10px;
+    padding: 6px 10px;
+    font-size: 12px;
+    line-height: 1.4;
+    width: 240px;
+    max-height: 220px;
+    overflow-y: auto;
+    text-align: left;
+    white-space: pre-wrap;
+    word-break: break-word;
+    box-shadow: var(--glass-shadow);
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.12s, visibility 0.12s;
+    z-index: 30;
+  }
+  .anno-note:hover .anno-note-tip {
+    opacity: 1;
+    visibility: visible;
+  }
+  /* Assistant (left-aligned) bubble → marker sits to the RIGHT of the bubble.
+     User (right-aligned) bubble → marker sits to the LEFT. Tip pops outward
+     so it never overlaps the bubble content. */
+  .msg-assistant > .anno-note { left: calc(100% + 10px); }
+  .msg-assistant > .anno-note .anno-note-tip { left: calc(100% + 8px); top: 0; }
+  .msg-user      > .anno-note { right: calc(100% + 10px); }
+  .msg-user      > .anno-note .anno-note-tip { right: calc(100% + 8px); top: 0; }
+  /* Narrow viewports (< 1100px): no gutter room. Drop the icon inside the
+     bubble at the bottom; tip flips above so it stays in view. */
+  @media (max-width: 1100px) {
+    .msg > .anno-note {
+      position: static;
+      left: auto !important;
+      right: auto !important;
+      top: auto !important;
+      margin: 4px 4px 0 0;
+      display: inline-flex;
+    }
+    .msg > .anno-note .anno-note-tip {
+      left: 0 !important;
+      right: auto !important;
+      top: auto !important;
+      bottom: calc(100% + 6px);
+    }
+  }
+
+  /* (Removed the vertical guardrails — they were re-introducing the "boxy"
+     feel of the chat area. The bubbles' own alignment already conveys the
+     scope of the page.) */
+  main { position: relative; }
+
+  /* ===== Liquid Glass — apply frosted translucency to every chrome panel
+     so the constellation moves underneath. Each surface uses backdrop-filter
+     blur+saturation plus a subtle inset hairline for the "glass edge". ===== */
+  header,
+  .rail,
+  .token-popover,
+  .search-modal,
+  .inline-anno-popover,
+  .anno-note,
+  .anno-note .anno-note-tip,
+  .toast,
+  .dock-panel,
+  .picker-menu,
+  .iap,
+  .rail-list .picker-item:hover,
+  .rail-list .picker-item.active {
+    backdrop-filter: blur(22px) saturate(180%);
+    -webkit-backdrop-filter: blur(22px) saturate(180%);
+  }
+  /* Override the solid backgrounds we set earlier so they let the canvas show. */
+  header {
+    background: var(--glass-bg) !important;
+    border-bottom: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
+  }
+  /* Rail = fully transparent — let the constellation pass straight through.
+     A modest backdrop blur keeps text just legible against busy motion. */
+  .rail {
+    background: transparent !important;
+    border-right: 1px solid var(--glass-border);
+    backdrop-filter: blur(14px) saturate(160%);
+    -webkit-backdrop-filter: blur(14px) saturate(160%);
+  }
+  @media (prefers-color-scheme: dark) {
+    .rail { background: transparent !important; }
+  }
+  /* Section buttons / search inputs inside the rail need a touch of frosting
+     too so they don't look like hard chips on the transparent rail. */
+  .rail .rail-section-btn.active,
+  .rail .rail-pane-head input[type="text"],
+  .rail .rail-pane-head button,
+  .rail #rail-project-select {
+    background: rgba(255, 255, 255, 0.18);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+  @media (prefers-color-scheme: dark) {
+    .rail .rail-section-btn.active,
+    .rail .rail-pane-head input[type="text"],
+    .rail .rail-pane-head button,
+    .rail #rail-project-select {
+      background: rgba(255, 255, 255, 0.05);
+    }
+  }
+  .token-popover,
+  .search-modal,
+  .inline-anno-popover,
+  .dock-panel {
+    background: var(--glass-bg-strong) !important;
+    border-color: var(--glass-border) !important;
+    box-shadow: var(--glass-shadow);
+  }
+  .anno-note { background: var(--glass-bg-strong) !important; }
+  .anno-note .anno-note-tip { background: var(--glass-bg-strong) !important; }
+  .toast { background: var(--glass-bg-strong) !important; }
+  /* Code blocks inside frosted bubbles need a solid-ish fill so syntax stays
+     readable — keep them at high opacity but still slightly translucent. */
+  .md pre {
+    background: rgba(246, 248, 250, 0.92) !important;
+  }
+  @media (prefers-color-scheme: dark) {
+    .md pre { background: rgba(22, 27, 34, 0.92) !important; }
+  }
+  /* Belt + braces: never render a stray stripe for an empty highlight. */
   .md mark.anno:empty { display: none; }
   .md li > mark.anno:only-child:empty,
   .md p > mark.anno:only-child:empty { display: none; }
+  /* If a multi-node wrap left block-level descendants inside the mark,
+     strip the highlight tint from them so the bullet/empty-line area
+     stays clean — only true text inside the mark gets the lavender. */
+  .md mark.anno > li,
+  .md mark.anno > p,
+  .md mark.anno > ul,
+  .md mark.anno > ol,
+  .md mark.anno > blockquote,
+  .md mark.anno > div,
+  .md mark.anno > br + *:empty {
+    background: transparent !important;
+    border-bottom: none !important;
+    box-shadow: none !important;
+  }
+  /* Active state — applied when its 💬 marker is hovered or its popover is open. */
+  .md mark.anno.anno-active {
+    background: var(--highlight-active);
+    border-bottom-color: var(--highlight-active-border);
+    box-shadow: 0 0 0 2px var(--highlight-active-border);
+    font-size: 1.04em;
+    transition: background 0.12s, font-size 0.12s, box-shadow 0.12s;
+  }
   .inline-anno-popover {
     position: absolute;
     z-index: 1400;
-    max-width: 340px;
-    min-width: 220px;
-    background: var(--bg);
-    border: 1px solid var(--highlight-border);
-    border-left: 3px solid var(--highlight-border);
-    border-radius: 6px;
-    padding: 8px 10px;
-    box-shadow: 0 6px 24px rgba(0,0,0,0.3);
+    max-width: 320px;
+    min-width: 200px;
+    background: var(--glass-bg-strong);
+    border: 1px solid var(--glass-border);
+    border-radius: 10px;
+    padding: 8px 12px;
+    box-shadow: var(--glass-shadow);
     font-size: 12.5px;
     color: var(--fg);
   }
@@ -1125,11 +1481,13 @@
   .copy-btn:focus { opacity: 1; }
   .copy-btn.copied { color: #1a7f37; border-color: #1a7f37; opacity: 1; }
 
+  /* Thinking block — borderless, leans on a left rail + subtle tint. */
   .thinking {
     background: var(--thinking-bg);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 8px 12px;
+    border: none;
+    border-left: 3px solid var(--thinking-accent, var(--muted));
+    border-radius: 0 8px 8px 0;
+    padding: 6px 12px;
     margin: 8px 0;
   }
   .thinking summary {
@@ -1142,18 +1500,16 @@
   .thinking[open] summary { margin-bottom: 8px; }
   .thinking-body { font-size: 13.5px; }
   @media (prefers-color-scheme: dark) {
-    .thinking {
-      border-left: 3px solid var(--thinking-accent);
-    }
     .thinking summary { color: var(--thinking-accent); }
     .thinking-body { color: #cbd5e1; }
   }
 
-  /* Tool call — collapsible <details>. Summary is compact, body has full args. */
+  /* Tool call — collapsible <details>. Borderless; the monospaced font and
+     muted background already differentiate it without a hard outline. */
   details.tool {
     background: var(--tool-bg);
-    border: 1px solid var(--border);
-    border-radius: 6px;
+    border: none;
+    border-radius: 8px;
     margin: 6px 0;
     font-family: ui-monospace, monospace;
     font-size: 12.5px;
@@ -1475,6 +1831,143 @@
     align-self: flex-start;
   }
   .sent-card .reply-toggle:hover { border-color: var(--accent); background: var(--accent-bg); }
+  /* Collapsible group containers — one per Send-to-Claude batch. */
+  .sent-group {
+    margin-top: 8px;
+    border-top: 1px dashed var(--border);
+    padding-top: 4px;
+  }
+  .sent-group:first-child {
+    border-top: none;
+    margin-top: 0;
+    padding-top: 0;
+  }
+  .sent-group.latest {
+    border-top: 1px dashed var(--accent);
+  }
+  .sent-group.latest:first-child { border-top: none; }
+  .sent-group-head {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: transparent;
+    border: none;
+    padding: 10px 4px 6px;
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+  }
+  .sent-group-head:hover { color: var(--fg); }
+  .sent-group-head.latest { color: var(--accent); }
+  .sent-group-chev {
+    display: inline-block;
+    transition: transform 0.15s ease;
+    color: var(--muted);
+    font-size: 11px;
+    width: 12px;
+    text-align: center;
+  }
+  .sent-group.latest .sent-group-chev,
+  .sent-group-head.latest .sent-group-chev { color: var(--accent); }
+  .sent-group.collapsed .sent-group-chev { transform: rotate(-90deg); }
+  .sent-group-body {
+    overflow: hidden;
+    transition: max-height 0.2s ease, opacity 0.15s ease;
+    max-height: 100000px;
+    opacity: 1;
+  }
+  .sent-group.collapsed .sent-group-body {
+    max-height: 0;
+    opacity: 0;
+  }
+  .sent-group.latest .sent-group-head::before {
+    content: "● ";
+    color: #16a34a;
+  }
+  /* Per-annotation Understood toggle + collapsed one-line summary. */
+  .sent-card {
+    position: relative;
+    /* Whole-card pointer would lie about what's clickable — only the citation
+       area and buttons inside are interactive. */
+    cursor: default !important;
+  }
+  .sent-card:hover { background: var(--bg) !important; }
+  .sent-card .sent-quote:hover {
+    background: rgba(99, 102, 241, 0.06);
+    border-radius: 4px;
+  }
+  /* msg #N citation chips inside any rendered message — click to jump. */
+  .msg-link {
+    display: inline;
+    background: rgba(99, 102, 241, 0.12);
+    color: var(--accent);
+    border: none;
+    padding: 0 6px;
+    border-radius: 4px;
+    font: inherit;
+    font-size: 0.92em;
+    cursor: pointer;
+    text-decoration: underline dotted;
+    text-underline-offset: 2px;
+    transition: background 0.12s;
+  }
+  .msg-link:hover {
+    background: rgba(99, 102, 241, 0.22);
+    text-decoration: underline;
+  }
+  .sent-card .anno-understood-btn {
+    position: absolute;
+    top: 6px; right: 8px;
+    width: 22px; height: 22px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: rgba(255,255,255,0.06);
+    color: var(--muted);
+    font: inherit; font-size: 11px;
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+    z-index: 2;
+  }
+  .sent-card .anno-understood-btn:hover {
+    background: rgba(22, 163, 74, 0.18);
+    color: #16a34a;
+    border-color: #16a34a;
+  }
+  .sent-card.understood .anno-understood-btn {
+    background: rgba(22, 163, 74, 0.22);
+    border-color: #16a34a;
+    color: #16a34a;
+  }
+  .sent-card .sent-card-summary {
+    display: none;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--muted);
+    padding: 4px 32px 4px 8px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .sent-card .sent-card-summary .anno-expand {
+    color: var(--accent);
+    font-weight: 400;
+    font-size: 10.5px;
+    margin-left: 6px;
+  }
+  .sent-card.understood {
+    padding: 0;
+    background: rgba(22, 163, 74, 0.04);
+    border-color: rgba(22, 163, 74, 0.20);
+  }
+  .sent-card.understood .sent-card-body { display: none; }
+  .sent-card.understood .sent-card-summary { display: block; }
+  .sent-card.understood .anno-understood-btn { top: 3px; right: 6px; }
   .sent-card .status-row {
     margin-top: 6px;
     display: flex; gap: 6px;
@@ -1582,6 +2075,7 @@
 </style>
 </head>
 <body>
+<canvas id="bg-canvas" aria-hidden="true"></canvas>
 <aside class="rail" id="rail" data-collapsed="false">
   <div class="rail-head">
     <button class="rail-toggle" id="rail-toggle" type="button" title="Collapse / expand sidebar">☰</button>
@@ -1699,6 +2193,21 @@
 </div>
 
 <div class="toast" id="toast"></div>
+
+<!-- Background-theme picker — lives at the body root so the header's
+     min-height + sticky positioning can't clip it. Triggered by the
+     watermark pill at the bottom-right of the canvas. -->
+<div class="bg-popover" id="bg-popover">
+  <button data-theme="constellation">🕸️ Constellation</button>
+  <button data-theme="galaxy">🌌 Milky Way</button>
+  <button data-theme="aurora">🌈 Aurora</button>
+  <button data-theme="solarSystem">🪐 Solar System</button>
+  <button data-theme="dna">🧬 DNA helix</button>
+  <button data-theme="ripples">💧 Wave interference</button>
+  <button data-theme="flock">🐦 Flock</button>
+  <button data-theme="rain">🌧️ Matrix rain</button>
+  <button data-theme="off">⬛ None (plain bg)</button>
+</div>
 
 <div class="search-overlay" id="search-overlay">
   <div class="search-modal">
@@ -2733,13 +3242,109 @@
     }
   });
 
-  function jumpToMessage(idx) {
-    const el = messagesEl.querySelector(`.msg[data-idx="${idx}"]`);
-    if (!el) return;
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
-    el.classList.remove("flash");
-    void el.offsetWidth;
-    el.classList.add("flash");
+  // Shared expansion helper — if the target message is hidden behind the
+  // "Load earlier" pagination, bump displayCount and re-render before scroll.
+  function ensureMessageRendered(idx) {
+    const have = messagesEl.querySelector(`.msg[data-idx="${idx}"]`);
+    if (have) return Promise.resolve();
+    const total = lastMessages.length;
+    if (idx < 0 || idx >= total) return Promise.resolve();
+    displayCount = Math.max(displayCount, total - idx);
+    stickyBottom = false;
+    return renderMessages();
+  }
+
+  function jumpToMessage(idx, opts) {
+    opts = opts || {};
+    ensureMessageRendered(idx).then(() => {
+      const el = messagesEl.querySelector(`.msg[data-idx="${idx}"]`);
+      if (!el) return;
+      // If a quote substring was supplied, scroll to its exact location inside
+      // the message (and pulse it) — used by msg-link chips inside /rano output
+      // that need to point to a SPECIFIC quoted span, not just the message top.
+      let target = el;
+      let pulseClass = "flash";
+      if (opts.quote && typeof opts.quote === "string" && opts.quote.trim()) {
+        const found = findTextInElement(el, opts.quote.trim());
+        if (found) {
+          target = found;
+          pulseClass = "msg-link-pulse";
+        }
+      }
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      target.classList.remove(pulseClass);
+      void target.offsetWidth;
+      target.classList.add(pulseClass);
+      setTimeout(() => target.classList.remove(pulseClass), 1800);
+    });
+  }
+
+  // Locate a contiguous substring inside a message element and return a
+  // transient <span> wrapping it, so we can scroll-into-view + pulse. Returns
+  // null if the text doesn't appear or spans formatting boundaries the
+  // Range API can't wrap.
+  function findTextInElement(root, needle) {
+    if (!needle) return null;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode: (n) => {
+        if (n.parentElement?.closest("script, style, .msg-head, .msg-collapsed-hint")) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    });
+    const nodes = [];
+    const offsets = [];
+    let full = "";
+    let n;
+    while ((n = walker.nextNode())) {
+      offsets.push(full.length);
+      nodes.push(n);
+      full += n.nodeValue;
+    }
+    // Try an exact match first; fall back to first 60 chars of the needle.
+    let idx = full.indexOf(needle);
+    if (idx === -1 && needle.length > 60) {
+      idx = full.indexOf(needle.slice(0, 60));
+    }
+    if (idx === -1) return null;
+    const len = needle.length > 60 ? 60 : needle.length;
+    const endIdx = idx + len;
+    let startNode = null, startOffset = 0, endNode = null, endOffset = 0;
+    for (let i = 0; i < nodes.length; i++) {
+      const ns = offsets[i];
+      const ne = ns + nodes[i].nodeValue.length;
+      if (startNode === null && idx >= ns && idx < ne) {
+        startNode = nodes[i]; startOffset = idx - ns;
+      }
+      if (endIdx > ns && endIdx <= ne) {
+        endNode = nodes[i]; endOffset = endIdx - ns; break;
+      }
+    }
+    if (!startNode || !endNode) return null;
+    const range = document.createRange();
+    try {
+      range.setStart(startNode, startOffset);
+      range.setEnd(endNode, endOffset);
+      const wrap = document.createElement("span");
+      wrap.className = "msg-link-target";
+      if (startNode === endNode) {
+        range.surroundContents(wrap);
+      } else {
+        const contents = range.extractContents();
+        wrap.appendChild(contents);
+        range.insertNode(wrap);
+      }
+      // Auto-clean the wrapper after the pulse animation so we don't pile up
+      // <span>s on every click.
+      setTimeout(() => {
+        if (wrap.parentNode) {
+          const parent = wrap.parentNode;
+          while (wrap.firstChild) parent.insertBefore(wrap.firstChild, wrap);
+          parent.removeChild(wrap);
+          parent.normalize?.();
+        }
+      }, 2400);
+      return wrap;
+    } catch { return null; }
   }
 
   // WhatsApp-style: clicking an annotation card scrolls the transcript to the
@@ -2747,26 +3352,30 @@
   // a paginated-away region, expand pagination far enough to include it first.
   function jumpToAnnotation(a) {
     if (!a) return;
-    const ensureMessageRendered = () => {
-      const have = messagesEl.querySelector(`.msg[data-idx="${a.msgIdx}"]`);
-      if (have) return Promise.resolve();
-      // Load enough earlier messages to include the target.
-      const total = lastMessages.length;
-      if (a.msgIdx < 0 || a.msgIdx >= total) return Promise.resolve();
-      displayCount = Math.max(displayCount, total - a.msgIdx);
-      stickyBottom = false;
-      return renderMessages();
-    };
-    ensureMessageRendered().then(() => {
+    ensureMessageRendered(a.msgIdx).then(() => {
       const key = annoKey(a);
       const mark = messagesEl.querySelector(`mark.anno[data-anno-key="${CSS.escape(key)}"]`);
-      const target = mark || messagesEl.querySelector(`.msg[data-idx="${a.msgIdx}"]`);
-      if (!target) return;
+      // If the mark exists, scroll to it. Otherwise fall through to the
+      // quote-text search inside the message — handy when the annotation was
+      // sent but never highlighted in this client (e.g. cross-machine view).
+      if (mark) {
+        mark.scrollIntoView({ behavior: "smooth", block: "center" });
+        mark.classList.remove("anno-pulse");
+        void mark.offsetWidth;
+        mark.classList.add("anno-pulse");
+        setTimeout(() => mark.classList.remove("anno-pulse"), 1800);
+        return;
+      }
+      const msgEl = messagesEl.querySelector(`.msg[data-idx="${a.msgIdx}"]`);
+      if (!msgEl) return;
+      const inner = a.quote ? findTextInElement(msgEl, a.quote) : null;
+      const target = inner || msgEl;
       target.scrollIntoView({ behavior: "smooth", block: "center" });
-      target.classList.remove("anno-pulse", "flash");
+      const cls = inner ? "msg-link-pulse" : "flash";
+      target.classList.remove(cls);
       void target.offsetWidth;
-      target.classList.add(mark ? "anno-pulse" : "flash");
-      setTimeout(() => target.classList.remove("anno-pulse"), 1800);
+      target.classList.add(cls);
+      setTimeout(() => target.classList.remove(cls), 1800);
     });
   }
 
@@ -2906,6 +3515,7 @@
     // latest usage data (matters on SSE transcript updates).
     if (tokenPopover.classList.contains("open")) refreshTokenPopover();
     addCopyButtons();
+    linkifyMsgRefs();
     reapplyHighlights();
     if (pendingJumpMsgIdx !== null) {
       const idx = pendingJumpMsgIdx;
@@ -2916,7 +3526,7 @@
     }
   }
 
-  // Customize these if you want different labels (e.g. "Ishaan" instead of "You")
+  // Customize these if you want different labels (e.g. "Alex" instead of "You")
   const USER_NAME = "You";
   const ASSISTANT_NAME = "Claude";
   const USER_INITIAL = USER_NAME.charAt(0).toUpperCase();
@@ -2972,6 +3582,37 @@
     wrap.appendChild(hint);
 
     if (foldAll) wrap.classList.add("collapsed");
+
+    // Auto-fold artifacts of verbose slash commands. Claude Code records a
+    // slash invocation as TWO consecutive messages:
+    //   1. user — `<command-name>/rano</command-name>` (the invocation)
+    //   2. user — the full expanded prompt template (huge wall of text)
+    //   3. assistant — the actual response
+    // Fold both #2 (the template) and #3 (the response) so the transcript
+    // stays readable. We do this by scanning a small window before this
+    // message for the original `<command-name>` invocation.
+    const SLASH_VERBOSE = /<command-name>\s*\/(rano|handoff|atlas-headlines)\b/i;
+    function nthBackText(n) {
+      const prev = lastMessages[idx - n];
+      if (!prev) return "";
+      return (prev.content || [])
+        .filter(p => p && p.type === "text" && typeof p.text === "string")
+        .map(p => p.text)
+        .join(" ");
+    }
+    const followsVerbose = SLASH_VERBOSE.test(nthBackText(1))
+                        || SLASH_VERBOSE.test(nthBackText(2))
+                        || SLASH_VERBOSE.test(nthBackText(3));
+    if (followsVerbose && idx > 0) {
+      // Skip the original invocation itself (short) — only fold #2 and #3.
+      const selfText = (m.content || [])
+        .filter(p => p && p.type === "text" && typeof p.text === "string")
+        .map(p => p.text)
+        .join(" ");
+      if (!SLASH_VERBOSE.test(selfText)) {
+        wrap.classList.add("collapsed");
+      }
+    }
 
     let hasVisible = false;
     for (const part of (m.content || [])) {
@@ -3378,6 +4019,85 @@
     return wrap;
   }
 
+  // Convert any "msg #<digits>" text inside rendered markdown into a clickable
+  // chip that jumps to that message. When the chip appears inside a /rano
+  // annotation block (e.g. `> Quote (msg #248, assistant): "..."`), we also
+  // capture the quoted text so the click jumps to the EXACT span, not just
+  // the message top.
+  function linkifyMsgRefs() {
+    if (lastMessages.length === 0) return;
+    const max = lastMessages.length - 1;
+    // Find every text node containing "msg #N" — but BEFORE rewriting, scan
+    // the parent block for an accompanying Quote: "..." snippet so each chip
+    // can carry its own quote payload.
+    const walker = document.createTreeWalker(messagesEl, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        if (!node.nodeValue) return NodeFilter.FILTER_REJECT;
+        if (node.parentElement?.closest("a, button, .msg-link")) return NodeFilter.FILTER_REJECT;
+        if (node.parentElement?.closest("pre, code")) return NodeFilter.FILTER_REJECT;
+        if (node.parentElement?.closest("mark.anno")) return NodeFilter.FILTER_REJECT;
+        return /\bmsg\s*#(\d+)/i.test(node.nodeValue)
+          ? NodeFilter.FILTER_ACCEPT
+          : NodeFilter.FILTER_REJECT;
+      },
+    });
+    const matches = [];
+    let n;
+    while ((n = walker.nextNode())) matches.push(n);
+    for (const textNode of matches) {
+      // Look at the nearest block-ish ancestor's full text to find the quote
+      // associated with this msg #N (if any). Pattern emitted by /rano:
+      //   **Quote** (msg #248, assistant): "...the quoted text..."
+      const block = textNode.parentElement?.closest("blockquote, p, li, div, section") || textNode.parentElement;
+      const blockText = block ? (block.innerText || block.textContent || "") : "";
+      // Capture pattern: msg #248, role): "..."  → group 1 = msg id, group 2 = quote
+      const quoteByMsg = new Map();
+      const qre = /msg\s*#(\d+)[^"]{0,80}"([^"]{1,400})"/gi;
+      let qm;
+      while ((qm = qre.exec(blockText))) {
+        quoteByMsg.set(qm[1], qm[2]);
+      }
+      const text = textNode.nodeValue;
+      const re = /\bmsg\s*#(\d+)/gi;
+      let last = 0;
+      const frag = document.createDocumentFragment();
+      let m;
+      while ((m = re.exec(text))) {
+        const idx = Number(m[1]);
+        if (idx < 0 || idx > max) continue;
+        if (m.index > last) {
+          frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+        }
+        const a = document.createElement("button");
+        a.type = "button";
+        a.className = "msg-link";
+        a.textContent = m[0];
+        a.title = quoteByMsg.has(m[1])
+          ? `Jump to the quoted span in message #${idx}`
+          : `Jump to message #${idx}`;
+        a.dataset.msgIdx = String(idx);
+        const q = quoteByMsg.get(m[1]);
+        if (q) a.dataset.quote = q;
+        frag.appendChild(a);
+        last = m.index + m[0].length;
+      }
+      if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+      if (frag.childNodes.length > 0) textNode.parentNode.replaceChild(frag, textNode);
+    }
+    if (!linkifyMsgRefs._wired) {
+      linkifyMsgRefs._wired = true;
+      messagesEl.addEventListener("click", (e) => {
+        const link = e.target.closest(".msg-link");
+        if (!link) return;
+        e.preventDefault();
+        const idx = Number(link.dataset.msgIdx);
+        if (!Number.isFinite(idx)) return;
+        const quote = link.dataset.quote || null;
+        jumpToMessage(idx, quote ? { quote } : undefined);
+      });
+    }
+  }
+
   function addCopyButtons() {
     // Block code: copy button (visible on hover)
     // Wrap the <pre> in a non-scrolling .code-block so the label/button
@@ -3606,6 +4326,9 @@
     for (const a of annotations) {
       highlightOne(a);
     }
+    // Margin notes depend on the highlights existing, so we recompute them
+    // right after every reapply pass. Position is geometry-based.
+    requestAnimationFrame(renderMarginNotes);
   }
 
   // ---- Inline annotation popover (in-message) --------------------------
@@ -3618,6 +4341,9 @@
       inlineAnnoPopover.parentNode.removeChild(inlineAnnoPopover);
     }
     inlineAnnoPopover = null;
+    // Drop the active glow from whichever mark had it pinned.
+    messagesEl.querySelectorAll("mark.anno.anno-active.pinned")
+      .forEach(m => m.classList.remove("anno-active", "pinned"));
   }
   function showInlineAnnoPopover(markEl) {
     closeInlineAnnoPopover();
@@ -3625,6 +4351,8 @@
     if (!key) return;
     const a = annotations.find(x => annoKey(x) === key);
     if (!a) return;
+    // Pin the active glow until the popover closes.
+    markEl.classList.add("anno-active", "pinned");
     const r = markEl.getBoundingClientRect();
     const pop = document.createElement("div");
     pop.className = "inline-anno-popover";
@@ -3662,22 +4390,48 @@
     });
   }
 
-  // Delegated dblclick handler on the messages container — survives every
-  // re-render of the transcript (no need to re-bind after pagination).
-  // (Wired once at script init; see below at the bottom of the script.)
+  // Delegated dblclick on the mark + single click on the 💬 chip. Survives
+  // every re-render of the transcript (no need to re-bind after pagination).
   function wireInlineAnnoDblClick() {
     if (wireInlineAnnoDblClick._wired) return;
     wireInlineAnnoDblClick._wired = true;
+    // When a 💬 marker is hovered, light up its matching mark so the user
+    // visually links comment ↔ highlight without searching the message.
+    messagesEl.addEventListener("mouseover", (e) => {
+      const note = e.target.closest(".anno-note");
+      if (!note) return;
+      const key = note.dataset.annoKey;
+      const mark = messagesEl.querySelector(`mark.anno[data-anno-key="${CSS.escape(key)}"]`);
+      if (mark) mark.classList.add("anno-active");
+    });
+    messagesEl.addEventListener("mouseout", (e) => {
+      const note = e.target.closest(".anno-note");
+      if (!note) return;
+      const key = note.dataset.annoKey;
+      const mark = messagesEl.querySelector(`mark.anno[data-anno-key="${CSS.escape(key)}"]`);
+      if (mark) mark.classList.remove("anno-active");
+    });
     messagesEl.addEventListener("dblclick", (e) => {
       const mark = e.target.closest("mark.anno");
       if (!mark) return;
       e.preventDefault();
       showInlineAnnoPopover(mark);
     });
+    messagesEl.addEventListener("click", (e) => {
+      const target = e.target.closest(".anno-bubble, .anno-note");
+      if (!target) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const key = target.dataset.annoKey;
+      const mark = messagesEl.querySelector(`mark.anno[data-anno-key="${CSS.escape(key)}"]`);
+      if (mark) showInlineAnnoPopover(mark);
+    });
     document.addEventListener("click", (e) => {
       if (!inlineAnnoPopover) return;
       if (inlineAnnoPopover.contains(e.target)) return;
       if (e.target.closest("mark.anno")) return;
+      if (e.target.closest(".anno-bubble")) return;
+      if (e.target.closest(".anno-note")) return;
       closeInlineAnnoPopover();
     });
     document.addEventListener("keydown", (e) => {
@@ -3761,20 +4515,29 @@
     }
     // Multi-node quotes that cross blank lines / empty <li> items leave
     // <mark.anno> wrappers around children whose visible text is just
-    // whitespace — they render as ugly yellow stripes on empty bullets.
-    // Strip any nested <mark> whose own text content is whitespace-only,
-    // unwrapping it so the empty element stays plain.
+    // whitespace — they render as ugly stripes on empty bullets.
     const innerMarks = mark.querySelectorAll("mark.anno, mark");
     innerMarks.forEach(m => {
       if (!m.textContent || !m.textContent.trim()) {
-        // Unwrap: replace the mark with its children
         const parent = m.parentNode;
         while (m.firstChild) parent.insertBefore(m.firstChild, m);
         parent.removeChild(m);
       }
     });
-    // Also: if the outer mark wrapped only whitespace + an empty <li>, the
-    // outer mark itself can be a strip. Unwrap it too in that case.
+    // Definitive fix: any block-level descendant of the mark that has no real
+    // text gets hidden. This removes the empty <li>/<p>/<br> rectangles that
+    // would otherwise leak the mark's background.
+    mark.querySelectorAll("li, p, blockquote, div").forEach(el => {
+      if (!el.textContent.trim()) {
+        el.style.display = "none";
+      }
+    });
+    mark.querySelectorAll("br").forEach(br => {
+      // BR inside the mark — kill any vertical-only stripe by removing it.
+      // The natural newline between content lines is preserved by the
+      // surrounding block elements that still exist.
+      br.remove();
+    });
     if (mark.children.length && Array.from(mark.children).every(c =>
       (c.tagName === "LI" || c.tagName === "P" || c.tagName === "BR")
       && !(c.textContent || "").trim()
@@ -3784,6 +4547,67 @@
       parent.removeChild(mark);
     }
   }
+
+  // Margin notes: floating comment markers in the gutter next to each
+  // message, vertically aligned with their highlight. Two annotations on
+  // the same line get horizontal-offset stacking so they don't overlap.
+  function renderMarginNotes() {
+    messagesEl.querySelectorAll(".anno-note").forEach(n => n.remove());
+    // First pass: build (msgEl, note, top) tuples per message.
+    const byMsg = new Map(); // msgEl -> [{ note, top }]
+    for (const a of annotations) {
+      const msgEl = messagesEl.querySelector(`.msg[data-idx="${a.msgIdx}"]`);
+      if (!msgEl) continue;
+      const mark = msgEl.querySelector(`mark.anno[data-anno-key="${CSS.escape(annoKey(a))}"]`);
+      if (!mark) continue;
+      if (getComputedStyle(msgEl).position === "static") msgEl.style.position = "relative";
+      const note = document.createElement("button");
+      note.type = "button";
+      note.className = "anno-note";
+      note.dataset.annoKey = annoKey(a);
+      const preview = (a.comment || "").trim();
+      note.innerHTML = `<span class="anno-note-icon" aria-label="annotation">💬</span><span class="anno-note-tip">${escapeHtml(preview)}</span>`;
+      // Intentionally NOT setting `title` — the .anno-note-tip is our styled
+      // tooltip; the native one would duplicate it.
+      const mr = mark.getBoundingClientRect();
+      const pr = msgEl.getBoundingClientRect();
+      const top = mr.top - pr.top;
+      note.style.top = top + "px";
+      msgEl.appendChild(note);
+      if (!byMsg.has(msgEl)) byMsg.set(msgEl, []);
+      byMsg.get(msgEl).push({ note, top });
+    }
+    // Second pass: per message, bucket notes by line (~24px). Within a bucket,
+    // shift each successive note horizontally so they sit side-by-side instead
+    // of stacking on top of each other.
+    const LINE_BUCKET = 24;
+    const STEP = 32;
+    const isUserMsg = (el) => el.classList.contains("msg-user");
+    for (const [msgEl, list] of byMsg) {
+      list.sort((a, b) => a.top - b.top);
+      const buckets = new Map();
+      for (const item of list) {
+        const k = Math.round(item.top / LINE_BUCKET);
+        if (!buckets.has(k)) buckets.set(k, []);
+        buckets.get(k).push(item);
+      }
+      const offsetProp = isUserMsg(msgEl) ? "marginRight" : "marginLeft";
+      for (const group of buckets.values()) {
+        group.forEach((item, i) => {
+          if (i === 0) return;
+          item.note.style[offsetProp] = (i * STEP) + "px";
+        });
+      }
+    }
+  }
+
+  // Recompute margin-note positions on resize, fold/unfold, etc. — debounced.
+  let marginNoteRepositionTimer = null;
+  function scheduleMarginNoteReposition() {
+    clearTimeout(marginNoteRepositionTimer);
+    marginNoteRepositionTimer = setTimeout(renderMarginNotes, 80);
+  }
+  window.addEventListener("resize", scheduleMarginNoteReposition);
 
   // ---- Dock (pending annotations panel) --------------------------------
   function refreshDock() {
@@ -3906,7 +4730,90 @@
     }
     sentList.innerHTML = "";
     if (railSentList) railSentList.innerHTML = "";
-    list.forEach((a) => {
+    // ---- Group by Send batch ----
+    // Every "Send to Claude" creates one agentation session containing N
+    // annotations. Bucket by that session id so each group reads as one
+    // batch with its own header. Fall back to a synthetic time-bucket if
+    // the id is missing.
+    const groups = new Map();
+    for (const a of list) {
+      const key = a.agentationSessionId || `time:${a.createdAt || ""}`;
+      if (!groups.has(key)) {
+        groups.set(key, { key, items: [], latestTs: 0 });
+      }
+      const g = groups.get(key);
+      g.items.push(a);
+      const ts = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      if (ts > g.latestTs) g.latestTs = ts;
+    }
+    const orderedGroups = [...groups.values()].sort((a, b) => b.latestTs - a.latestTs);
+    // Per-session memory of which groups are open/closed so the user's choice
+    // persists across reloads. Default: latest open, the rest collapsed.
+    const GROUP_STATE_KEY = `viewer:sentGroupState:${currentSessionId || ""}`;
+    const UNDERSTOOD_KEY = `viewer:annoUnderstood:${currentSessionId || ""}`;
+    let groupState = {};
+    let understoodState = {};
+    try { groupState = JSON.parse(localStorage.getItem(GROUP_STATE_KEY) || "{}"); }
+    catch { groupState = {}; }
+    try { understoodState = JSON.parse(localStorage.getItem(UNDERSTOOD_KEY) || "{}"); }
+    catch { understoodState = {}; }
+    function isOpen(key, isLatest) {
+      if (key in groupState) return groupState[key] === "open";
+      return isLatest; // default
+    }
+
+    function buildGroupContainer(group, isLatest) {
+      const wrap = document.createElement("div");
+      wrap.className = "sent-group" + (isLatest ? " latest" : "");
+      wrap.dataset.groupKey = group.key;
+      if (!isOpen(group.key, isLatest)) wrap.classList.add("collapsed");
+      const head = document.createElement("button");
+      head.type = "button";
+      head.className = "sent-group-head" + (isLatest ? " latest" : "");
+      const when = group.latestTs ? formatRelative(Date.now() - group.latestTs) : "unknown time";
+      const label = isLatest ? "LATEST · " : "";
+      head.innerHTML = `<span class="sent-group-chev">▾</span><span class="sent-group-label">${label}${when} · ${group.items.length} annotation${group.items.length === 1 ? "" : "s"}</span>`;
+      head.addEventListener("click", () => {
+        const nowCollapsed = !wrap.classList.contains("collapsed");
+        wrap.classList.toggle("collapsed", nowCollapsed);
+        groupState[group.key] = nowCollapsed ? "closed" : "open";
+        try { localStorage.setItem(GROUP_STATE_KEY, JSON.stringify(groupState)); } catch {}
+        // Mirror state into the rail-side container if it exists.
+        if (railSentList) {
+          const peer = railSentList.querySelector(`.sent-group[data-group-key="${CSS.escape(group.key)}"]`);
+          if (peer) peer.classList.toggle("collapsed", nowCollapsed);
+        }
+      });
+      const body = document.createElement("div");
+      body.className = "sent-group-body";
+      wrap.appendChild(head);
+      wrap.appendChild(body);
+      return { wrap, body };
+    }
+
+    // Build group containers up front for BOTH targets, then we'll append
+    // each annotation card into its group's body as we iterate.
+    const groupContainers = new Map(); // key → { sentBody, railBody }
+    let gIdx = -1;
+    for (const g of orderedGroups) {
+      gIdx++;
+      const isLatest = gIdx === 0;
+      const sent = buildGroupContainer(g, isLatest);
+      sentList.appendChild(sent.wrap);
+      let rail = null;
+      if (railSentList) {
+        rail = buildGroupContainer(g, isLatest);
+        railSentList.appendChild(rail.wrap);
+      }
+      groupContainers.set(g.key, {
+        sentBody: sent.body,
+        railBody: rail ? rail.body : null,
+      });
+    }
+    const flatList = orderedGroups.flatMap(g =>
+      g.items.map(it => ({ a: it, groupKey: g.key }))
+    );
+    flatList.forEach(({ a, groupKey }, i) => {
       const card = document.createElement("div");
       card.className = "sent-card anno-card";
       // Parse the elementPath we POSTed (e.g. "msg:5:assistant") to get msgIdx
@@ -3980,18 +4887,31 @@
       }
       const quoteShort = String(quote).slice(0, 400);
       const jumpHint = msgIdx !== null
-        ? `<div class="jump-hint">Click to jump to message #${msgIdx} ↗</div>` : "";
+        ? `<div class="jump-hint">Click the highlighted quote to jump to message #${msgIdx} ↗</div>` : "";
+      // Stable per-annotation index for the short "Annotation N" summary
+      const annoNum = i + 1;
+      const annoId = a.id || `${groupKey}:${annoNum}`;
+      const isUnderstood = !!understoodState[annoId];
+      card.dataset.annoId = annoId;
+      if (isUnderstood) card.classList.add("understood");
       card.innerHTML = `
-        <div class="sent-quote">${
-          beforeTxt ? `<span class="ctx before" style="opacity:.55;font-style:italic">…${escapeHtml(beforeTxt)}</span>` : ""
-        }<span class="quote-mark" style="background:var(--selection-bg);color:var(--selection-fg);padding:0 2px;border-radius:2px">${escapeHtml(quoteShort)}</span>${
-          afterTxt ? `<span class="ctx after" style="opacity:.55;font-style:italic">${escapeHtml(afterTxt)}…</span>` : ""
-        }</div>
-        <div class="sent-comment"><span class="who">You:</span><span>${escapeHtml(comment)}</span></div>
-        ${repliesHtml}
-        <div class="status-row">${statusPills.join("")}</div>
-        ${jumpHint}
+        <div class="sent-card-summary">Annotation ${annoNum} · ✓ understood <span class="anno-expand">(expand)</span></div>
+        <button class="anno-understood-btn" type="button" title="Mark as read / understood (collapses to one line)">✓</button>
+        <div class="sent-card-body">
+          <div class="sent-quote">${
+            beforeTxt ? `<span class="ctx before" style="opacity:.55;font-style:italic">…${escapeHtml(beforeTxt)}</span>` : ""
+          }<span class="quote-mark" style="background:var(--selection-bg);color:var(--selection-fg);padding:0 2px;border-radius:2px;cursor:${msgIdx !== null ? "pointer" : "default"}">${escapeHtml(quoteShort)}</span>${
+            afterTxt ? `<span class="ctx after" style="opacity:.55;font-style:italic">${escapeHtml(afterTxt)}…</span>` : ""
+          }</div>
+          <div class="sent-comment"><span class="who">You:</span><span>${escapeHtml(comment)}</span></div>
+          ${repliesHtml}
+          <div class="status-row">${statusPills.join("")}</div>
+          ${jumpHint}
+        </div>
       `;
+      // Click handler: jump ONLY when the user clicks the citation area
+      // (the highlighted quote + its dimmed before/after context). Clicking
+      // the comment, replies, pills, or buttons should not redirect.
       if (msgIdx !== null) {
         const synth = {
           msgIdx,
@@ -4000,11 +4920,54 @@
           prefix: beforeTxt,
           suffix: afterTxt,
         };
-        card.addEventListener("click", () => jumpToAnnotation(synth));
+        const citation = card.querySelector(".sent-quote");
+        if (citation) {
+          citation.style.cursor = "pointer";
+          citation.title = `Jump to message #${msgIdx}`;
+          citation.addEventListener("click", (e) => {
+            e.stopPropagation();
+            jumpToAnnotation(synth);
+          });
+        }
       }
-      sentList.appendChild(card);
-      if (railSentList) {
+      // Understood toggle: collapses to one-line summary, persists per-session.
+      const understoodBtn = card.querySelector(".anno-understood-btn");
+      if (understoodBtn) {
+        understoodBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const nowUnderstood = !card.classList.contains("understood");
+          card.classList.toggle("understood", nowUnderstood);
+          understoodState[annoId] = nowUnderstood;
+          try { localStorage.setItem(UNDERSTOOD_KEY, JSON.stringify(understoodState)); } catch {}
+          // Mirror state to the rail-side clone of this card.
+          if (railSentList) {
+            const peer = railSentList.querySelector(`.sent-card[data-anno-id="${CSS.escape(annoId)}"]`);
+            if (peer) peer.classList.toggle("understood", nowUnderstood);
+          }
+        });
+      }
+      // Expand-from-summary: clicking the one-line summary expands again.
+      const summary = card.querySelector(".sent-card-summary");
+      if (summary) {
+        summary.addEventListener("click", (e) => {
+          e.stopPropagation();
+          card.classList.remove("understood");
+          understoodState[annoId] = false;
+          try { localStorage.setItem(UNDERSTOOD_KEY, JSON.stringify(understoodState)); } catch {}
+          if (railSentList) {
+            const peer = railSentList.querySelector(`.sent-card[data-anno-id="${CSS.escape(annoId)}"]`);
+            if (peer) peer.classList.remove("understood");
+          }
+        });
+      }
+      const targets = groupContainers.get(groupKey);
+      const sentTarget = targets ? targets.sentBody : sentList;
+      const railTarget = targets ? targets.railBody : railSentList;
+      sentTarget.appendChild(card);
+      if (railTarget) {
         const railCard = card.cloneNode(true);
+        railCard.dataset.annoId = annoId;
+        // Re-bind on the clone — cloneNode doesn't copy listeners.
         if (msgIdx !== null) {
           const synth = {
             msgIdx,
@@ -4013,9 +4976,40 @@
             prefix: beforeTxt,
             suffix: afterTxt,
           };
-          railCard.addEventListener("click", () => jumpToAnnotation(synth));
+          const railCit = railCard.querySelector(".sent-quote");
+          if (railCit) {
+            railCit.style.cursor = "pointer";
+            railCit.title = `Jump to message #${msgIdx}`;
+            railCit.addEventListener("click", (e) => {
+              e.stopPropagation();
+              jumpToAnnotation(synth);
+            });
+          }
         }
-        railSentList.appendChild(railCard);
+        const railUnderstoodBtn = railCard.querySelector(".anno-understood-btn");
+        if (railUnderstoodBtn) {
+          railUnderstoodBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const nowUnderstood = !railCard.classList.contains("understood");
+            railCard.classList.toggle("understood", nowUnderstood);
+            understoodState[annoId] = nowUnderstood;
+            try { localStorage.setItem(UNDERSTOOD_KEY, JSON.stringify(understoodState)); } catch {}
+            const peer = sentList.querySelector(`.sent-card[data-anno-id="${CSS.escape(annoId)}"]`);
+            if (peer) peer.classList.toggle("understood", nowUnderstood);
+          });
+        }
+        const railSummary = railCard.querySelector(".sent-card-summary");
+        if (railSummary) {
+          railSummary.addEventListener("click", (e) => {
+            e.stopPropagation();
+            railCard.classList.remove("understood");
+            understoodState[annoId] = false;
+            try { localStorage.setItem(UNDERSTOOD_KEY, JSON.stringify(understoodState)); } catch {}
+            const peer = sentList.querySelector(`.sent-card[data-anno-id="${CSS.escape(annoId)}"]`);
+            if (peer) peer.classList.remove("understood");
+          });
+        }
+        railTarget.appendChild(railCard);
       }
     });
   }
@@ -4109,6 +5103,1199 @@
     es.onopen = () => setLive(true);
     es.onerror = () => setLive(false);
   }
+
+  // ---- Background themes ------------------------------------------------
+  // Swappable canvas animations. Each theme implements init(state, w, h) and
+  // tick(ctx, state, mouse, w, h). State is reset on theme switch.
+  (function bgThemes() {
+    const canvas = document.getElementById("bg-canvas");
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    let dpr = Math.max(1, window.devicePixelRatio || 1);
+    let w = 0, h = 0;
+    const mouse = { x: -9999, y: -9999, active: false };
+
+    function isDark() {
+      return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+    }
+    let palette = {};
+    function refreshColors() {
+      const dark = isDark();
+      palette = {
+        dark,
+        strokeBase: dark ? "120, 170, 255" : "60, 110, 200",
+        dot: dark ? "rgba(200, 220, 255, 0.85)" : "rgba(40, 80, 160, 0.8)",
+        starBright: dark ? "rgba(255, 250, 230, 0.95)" : "rgba(255, 200, 100, 0.95)",
+        starDim: dark ? "rgba(200, 220, 255, 0.55)" : "rgba(60, 110, 200, 0.55)",
+        electron: dark ? "rgba(120, 200, 255, 0.95)" : "rgba(20, 100, 200, 0.95)",
+        nucleus: dark ? "rgba(255, 130, 130, 0.9)" : "rgba(200, 60, 60, 0.85)",
+        orbit: dark ? "rgba(120, 180, 255, 0.18)" : "rgba(60, 110, 200, 0.20)",
+        rain: dark ? "rgba(120, 255, 180, 0.95)" : "rgba(20, 140, 70, 0.9)",
+      };
+    }
+    refreshColors();
+    if (window.matchMedia) {
+      try {
+        window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+          refreshColors();
+        });
+      } catch {}
+    }
+
+    // ----- Constellation theme -----
+    const constellation = {
+      init(state) {
+        state.particles = [];
+        const DENSITY = 0.00022;
+        const target = Math.max(80, Math.min(320, Math.floor(w * h * DENSITY)));
+        for (let i = 0; i < target; i++) {
+          state.particles.push({
+            x: Math.random() * w, y: Math.random() * h,
+            vx: (Math.random() - 0.5) * 1.2,
+            vy: (Math.random() - 0.5) * 1.2,
+          });
+        }
+      },
+      tick(ctx, state) {
+        const LINK_DIST = 160, GRAVITY_RADIUS = 200;
+        const GRAVITY_STRENGTH = 0.06, GRAVITY_TANGENT = 0.05;
+        const MIN_SPEED = 0.4, MAX_SPEED = 1.8, GRAVITY_MAX_SPEED = 2.0;
+        const r2 = GRAVITY_RADIUS * GRAVITY_RADIUS;
+        for (const p of state.particles) {
+          p.x += p.vx; p.y += p.vy;
+          if (p.x < -10) p.x = w + 10;
+          if (p.x > w + 10) p.x = -10;
+          if (p.y < -10) p.y = h + 10;
+          if (p.y > h + 10) p.y = -10;
+          let inField = false;
+          if (mouse.active) {
+            const dx = mouse.x - p.x, dy = mouse.y - p.y;
+            const d2 = dx * dx + dy * dy;
+            if (d2 < r2) {
+              inField = true;
+              const d = Math.sqrt(d2) || 1;
+              const falloff = (1 - d / GRAVITY_RADIUS);
+              const pull = falloff * falloff * GRAVITY_STRENGTH;
+              const nx = dx / d, ny = dy / d;
+              p.vx += nx * pull + (-ny) * pull * GRAVITY_TANGENT;
+              p.vy += ny * pull + ( nx) * pull * GRAVITY_TANGENT;
+            }
+          }
+          p.vx += (Math.random() - 0.5) * 0.06;
+          p.vy += (Math.random() - 0.5) * 0.06;
+          const sp = Math.hypot(p.vx, p.vy);
+          const cap = inField ? GRAVITY_MAX_SPEED : MAX_SPEED;
+          if (sp < MIN_SPEED) { const k = MIN_SPEED / (sp || 0.001); p.vx *= k; p.vy *= k; }
+          else if (sp > cap) { const k = cap / sp; p.vx *= k; p.vy *= k; }
+        }
+        ctx.lineWidth = 0.8;
+        for (let i = 0; i < state.particles.length; i++) {
+          const a = state.particles[i];
+          for (let j = i + 1; j < state.particles.length; j++) {
+            const b = state.particles[j];
+            const dx = a.x - b.x, dy = a.y - b.y;
+            const d2 = dx * dx + dy * dy;
+            if (d2 < LINK_DIST * LINK_DIST) {
+              let alpha = (1 - Math.sqrt(d2) / LINK_DIST) * 0.45;
+              if (mouse.active) {
+                const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+                const ddx = mx - mouse.x, ddy = my - mouse.y;
+                const md2 = ddx * ddx + ddy * ddy;
+                if (md2 < r2) {
+                  const k = 1 - md2 / r2;
+                  alpha = Math.min(1, alpha + k * 0.45);
+                }
+              }
+              ctx.strokeStyle = `rgba(${palette.strokeBase}, ${alpha.toFixed(3)})`;
+              ctx.beginPath();
+              ctx.moveTo(a.x, a.y);
+              ctx.lineTo(b.x, b.y);
+              ctx.stroke();
+            }
+          }
+        }
+        ctx.fillStyle = palette.dot;
+        for (const p of state.particles) {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 1.8, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        if (mouse.active) {
+          const g = ctx.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, 120);
+          g.addColorStop(0, `rgba(${palette.strokeBase}, 0.15)`);
+          g.addColorStop(1, `rgba(${palette.strokeBase}, 0)`);
+          ctx.fillStyle = g;
+          ctx.beginPath(); ctx.arc(mouse.x, mouse.y, 120, 0, Math.PI * 2); ctx.fill();
+        }
+      },
+    };
+
+    // ----- Galaxy (Milky Way) theme -----
+    // Logarithmic spiral arms; stars rotate with angular velocity inversely
+    // proportional to sqrt(radius) so inner stars sweep faster (Keplerian-ish).
+    const galaxy = {
+      init(state) {
+        state.stars = [];
+        const ARMS = 4;
+        const STAR_COUNT = 1100;       // denser field
+        const cx = w / 2, cy = h / 2;
+        const maxR = Math.max(w, h) * 0.75;
+        for (let i = 0; i < STAR_COUNT; i++) {
+          const t = Math.pow(Math.random(), 0.55);
+          const r = 40 + t * maxR;
+          const arm = Math.floor(Math.random() * ARMS);
+          const tightness = 1.6;
+          const armAngle = (arm / ARMS) * Math.PI * 2;
+          // Tighter arm clustering — pull jitter range down so the arms
+          // read as distinct streams instead of a uniform smear.
+          const angle = armAngle + Math.log(r) * tightness + (Math.random() - 0.5) * 0.30;
+          state.stars.push({
+            r, angle,
+            speed: 0.0007 + 1.4 / Math.sqrt(r + 30) * 0.018,
+            size: 0.6 + Math.random() * 1.6,
+            bright: Math.random() < 0.22,
+            // A small fraction get a warm reddish tint (red giants/clusters).
+            warm: Math.random() < 0.06,
+            tw: Math.random() * Math.PI * 2,
+          });
+        }
+        // Sparse foreground stars — fixed positions, just twinkle. Sells depth.
+        state.foreground = [];
+        const FG_COUNT = 70;
+        for (let i = 0; i < FG_COUNT; i++) {
+          state.foreground.push({
+            x: Math.random() * w,
+            y: Math.random() * h,
+            size: 0.8 + Math.random() * 1.2,
+            tw: Math.random() * Math.PI * 2,
+          });
+        }
+        state.cx = cx; state.cy = cy;
+        state.bulgeR = 110;
+      },
+      tick(ctx, state) {
+        const cx = state.cx, cy = state.cy;
+        // Dust band — faint dark ellipse across the disk plane sells the spiral
+        // arm structure (you see this in real photos of the Milky Way).
+        const dust = ctx.createRadialGradient(cx, cy, state.bulgeR * 0.4, cx, cy, state.bulgeR * 3.0);
+        dust.addColorStop(0, "rgba(0,0,0,0)");
+        dust.addColorStop(0.5, palette.dark ? "rgba(0,0,0,0.18)" : "rgba(0,0,0,0.06)");
+        dust.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = dust;
+        ctx.beginPath(); ctx.ellipse(cx, cy, state.bulgeR * 3.0, state.bulgeR * 1.8, 0, 0, Math.PI * 2); ctx.fill();
+        // Galactic core — multi-layer glow + a small bright nucleus
+        const outerBulge = ctx.createRadialGradient(cx, cy, 0, cx, cy, state.bulgeR * 2.6);
+        outerBulge.addColorStop(0, palette.dark ? "rgba(255, 220, 160, 0.18)" : "rgba(255, 200, 120, 0.18)");
+        outerBulge.addColorStop(1, "rgba(255, 200, 120, 0)");
+        ctx.fillStyle = outerBulge;
+        ctx.beginPath(); ctx.arc(cx, cy, state.bulgeR * 2.6, 0, Math.PI * 2); ctx.fill();
+        const innerBulge = ctx.createRadialGradient(cx, cy, 0, cx, cy, state.bulgeR * 1.0);
+        innerBulge.addColorStop(0, palette.dark ? "rgba(255, 245, 220, 0.85)" : "rgba(255, 230, 180, 0.85)");
+        innerBulge.addColorStop(0.6, palette.dark ? "rgba(255, 200, 140, 0.45)" : "rgba(255, 170, 100, 0.45)");
+        innerBulge.addColorStop(1, "rgba(255, 200, 120, 0)");
+        ctx.fillStyle = innerBulge;
+        ctx.beginPath(); ctx.arc(cx, cy, state.bulgeR * 1.0, 0, Math.PI * 2); ctx.fill();
+        // Nucleus
+        ctx.fillStyle = "rgba(255, 250, 230, 0.95)";
+        ctx.beginPath(); ctx.arc(cx, cy, 3.5, 0, Math.PI * 2); ctx.fill();
+        // Snap softly back to viewport center if window resized.
+        state.cx += (w / 2 - state.cx) * 0.05;
+        state.cy += (h / 2 - state.cy) * 0.05;
+        // Disk stars
+        for (const s of state.stars) {
+          s.angle += s.speed;
+          s.tw += 0.07;
+          const x = state.cx + Math.cos(s.angle) * s.r;
+          const y = state.cy + Math.sin(s.angle) * s.r * 0.6;
+          const tw = (Math.sin(s.tw) + 1) / 2;
+          const a = s.bright ? 0.75 + tw * 0.25 : 0.35 + tw * 0.35;
+          if (s.warm) {
+            ctx.fillStyle = `rgba(255, 180, 130, ${(a * 0.9).toFixed(2)})`;
+          } else {
+            ctx.fillStyle = s.bright
+              ? palette.starBright.replace("0.95", a.toFixed(2))
+              : palette.starDim.replace("0.55", (a * 0.7).toFixed(2));
+          }
+          ctx.beginPath(); ctx.arc(x, y, s.size, 0, Math.PI * 2); ctx.fill();
+        }
+        // Foreground stars — fixed in place, just twinkle. Adds depth.
+        for (const f of state.foreground) {
+          f.tw += 0.04;
+          const tw = (Math.sin(f.tw) + 1) / 2;
+          ctx.fillStyle = palette.dark
+            ? `rgba(255, 255, 255, ${(0.45 + tw * 0.45).toFixed(2)})`
+            : `rgba(40, 80, 160, ${(0.45 + tw * 0.45).toFixed(2)})`;
+          ctx.beginPath(); ctx.arc(f.x, f.y, f.size, 0, Math.PI * 2); ctx.fill();
+          // Tiny diffraction cross for the brightest foreground stars
+          if (f.size > 1.6) {
+            ctx.strokeStyle = palette.dark
+              ? `rgba(255, 255, 255, ${(0.18 * tw).toFixed(2)})`
+              : `rgba(40, 80, 160, ${(0.18 * tw).toFixed(2)})`;
+            ctx.lineWidth = 0.6;
+            ctx.beginPath();
+            ctx.moveTo(f.x - 4, f.y); ctx.lineTo(f.x + 4, f.y);
+            ctx.moveTo(f.x, f.y - 4); ctx.lineTo(f.x, f.y + 4);
+            ctx.stroke();
+          }
+        }
+      },
+    };
+
+    // ----- Aurora theme -----
+    // Flowing curved color bands across the entire viewport. Each band is a
+    // smooth sine-noise curve; bands drift and breathe their amplitudes.
+    // Always fills the screen, never gets covered by centered bubbles.
+    const aurora = {
+      init(state) {
+        const COUNT = 6;
+        state.bands = [];
+        // Pure aurora-borealis palette — cool greens, mints, cyan, violet.
+        // No pinks or warm tones, so additive blending stays in the
+        // cool-spectrum and never produces the orangey/henna wash.
+        const palettes = palette.dark
+          ? [
+              { from: "rgba(80, 230, 180, 0.32)",  to: "rgba(80, 230, 180, 0)" },     // emerald
+              { from: "rgba(120, 255, 200, 0.28)", to: "rgba(120, 255, 200, 0)" },    // mint
+              { from: "rgba(100, 200, 255, 0.28)", to: "rgba(100, 200, 255, 0)" },    // sky
+              { from: "rgba(140, 100, 240, 0.24)", to: "rgba(140, 100, 240, 0)" },    // violet
+              { from: "rgba(60, 180, 220, 0.24)",  to: "rgba(60, 180, 220, 0)" },     // teal
+              { from: "rgba(170, 255, 150, 0.22)", to: "rgba(170, 255, 150, 0)" },    // pale green
+            ]
+          : [
+              { from: "rgba(30, 160, 110, 0.22)",  to: "rgba(30, 160, 110, 0)" },
+              { from: "rgba(70, 180, 150, 0.20)",  to: "rgba(70, 180, 150, 0)" },
+              { from: "rgba(40, 130, 200, 0.20)",  to: "rgba(40, 130, 200, 0)" },
+              { from: "rgba(90, 60, 200, 0.18)",   to: "rgba(90, 60, 200, 0)" },
+              { from: "rgba(60, 160, 180, 0.18)",  to: "rgba(60, 160, 180, 0)" },
+              { from: "rgba(120, 170, 90, 0.16)",  to: "rgba(120, 170, 90, 0)" },
+            ];
+        for (let i = 0; i < COUNT; i++) {
+          state.bands.push({
+            y0: (h / (COUNT + 1)) * (i + 1),
+            amp: 70 + Math.random() * 90,
+            freq: 0.0035 + Math.random() * 0.003,
+            speed: 0.004 + Math.random() * 0.006,
+            phase: Math.random() * Math.PI * 2,
+            thickness: 60 + Math.random() * 90,
+            colors: palettes[i % palettes.length],
+            breathePhase: Math.random() * Math.PI * 2,
+          });
+        }
+      },
+      tick(ctx, state) {
+        // Midnight-sky backdrop with a faint horizon gradient so the aurora
+        // reads as light against night, not just stacked color washes.
+        const skyGrad = ctx.createLinearGradient(0, 0, 0, h);
+        if (palette.dark) {
+          skyGrad.addColorStop(0, "rgba(6, 10, 28, 0.85)");      // deep night top
+          skyGrad.addColorStop(1, "rgba(8, 18, 44, 0.85)");      // slightly bluer near horizon
+        } else {
+          skyGrad.addColorStop(0, "rgba(232, 240, 250, 0.55)");
+          skyGrad.addColorStop(1, "rgba(214, 226, 244, 0.55)");
+        }
+        ctx.fillStyle = skyGrad;
+        ctx.fillRect(0, 0, w, h);
+        ctx.save();
+        ctx.globalCompositeOperation = "lighter";
+        for (const b of state.bands) {
+          b.phase += b.speed;
+          b.breathePhase += 0.012;
+          const breathe = 0.7 + 0.3 * Math.sin(b.breathePhase);
+          const amp = b.amp * breathe;
+          const thickness = b.thickness * (0.8 + 0.4 * Math.sin(b.breathePhase * 0.7));
+          ctx.beginPath();
+          for (let x = -20; x <= w + 20; x += 12) {
+            const y = b.y0 + Math.sin(x * b.freq + b.phase) * amp + Math.sin(x * b.freq * 2.3 + b.phase * 1.3) * amp * 0.35;
+            if (x === -20) ctx.moveTo(x, y - thickness / 2);
+            else ctx.lineTo(x, y - thickness / 2);
+          }
+          for (let x = w + 20; x >= -20; x -= 12) {
+            const y = b.y0 + Math.sin(x * b.freq + b.phase) * amp + Math.sin(x * b.freq * 2.3 + b.phase * 1.3) * amp * 0.35;
+            ctx.lineTo(x, y + thickness / 2);
+          }
+          ctx.closePath();
+          const grad = ctx.createLinearGradient(0, b.y0 - thickness, 0, b.y0 + thickness);
+          grad.addColorStop(0, b.colors.to);
+          grad.addColorStop(0.5, b.colors.from);
+          grad.addColorStop(1, b.colors.to);
+          ctx.fillStyle = grad;
+          ctx.fill();
+        }
+        ctx.restore();
+      },
+    };
+
+    // ----- Atom theme (deprecated — replaced by aurora) -----
+    const atom = {
+      init(state) {
+        state.t = 0;
+        const COUNT = Math.max(3, Math.min(6, Math.round(Math.min(w, h) / 220)));
+        const baseR = Math.min(w, h) * 0.10;
+        state.atoms = [];
+        for (let i = 0; i < COUNT; i++) {
+          state.atoms.push({
+            x: 80 + Math.random() * (w - 160),
+            y: 80 + Math.random() * (h - 160),
+            vx: (Math.random() - 0.5) * 1.4,
+            vy: (Math.random() - 0.5) * 1.4,
+            r: baseR * (0.9 + Math.random() * 0.5),
+            phase: Math.random() * Math.PI * 2,
+            shells: [
+              { rxK: 1.0, ryK: 0.42, tilt:  Math.random() * Math.PI, speed: 0.022, electrons: 1, phase: Math.random() * Math.PI * 2 },
+              { rxK: 1.7, ryK: 0.55, tilt: -Math.random() * Math.PI, speed: 0.013, electrons: 2, phase: Math.random() * Math.PI * 2 },
+              { rxK: 2.4, ryK: 0.70, tilt:  Math.random() * Math.PI, speed: 0.0075, electrons: 3, phase: Math.random() * Math.PI * 2 },
+            ],
+          });
+        }
+      },
+      tick(ctx, state) {
+        state.t += 1;
+        const MAX_SPEED = 1.8;
+        // Integrate + wall bounce
+        for (const a of state.atoms) {
+          a.x += a.vx; a.y += a.vy;
+          const pad = a.r * 2.6;
+          if (a.x < pad) { a.x = pad; a.vx = Math.abs(a.vx); }
+          else if (a.x > w - pad) { a.x = w - pad; a.vx = -Math.abs(a.vx); }
+          if (a.y < pad) { a.y = pad; a.vy = Math.abs(a.vy); }
+          else if (a.y > h - pad) { a.y = h - pad; a.vy = -Math.abs(a.vy); }
+          // Tiny brownian noise
+          a.vx += (Math.random() - 0.5) * 0.02;
+          a.vy += (Math.random() - 0.5) * 0.02;
+          const sp = Math.hypot(a.vx, a.vy);
+          if (sp > MAX_SPEED) { const k = MAX_SPEED / sp; a.vx *= k; a.vy *= k; }
+        }
+        // Atom-atom collision (elastic-ish): swap velocities along the collision axis
+        for (let i = 0; i < state.atoms.length; i++) {
+          for (let j = i + 1; j < state.atoms.length; j++) {
+            const a = state.atoms[i], b = state.atoms[j];
+            const dx = b.x - a.x, dy = b.y - a.y;
+            const d = Math.hypot(dx, dy);
+            const minD = (a.r + b.r) * 2.4;
+            if (d > 0 && d < minD) {
+              const overlap = (minD - d) / 2;
+              const nx = dx / d, ny = dy / d;
+              a.x -= nx * overlap; a.y -= ny * overlap;
+              b.x += nx * overlap; b.y += ny * overlap;
+              // Reflect velocities along the normal
+              const va = a.vx * nx + a.vy * ny;
+              const vb = b.vx * nx + b.vy * ny;
+              const swap = vb - va;
+              a.vx += swap * nx; a.vy += swap * ny;
+              b.vx -= swap * nx; b.vy -= swap * ny;
+              // Tiny burst flash visualized as a halo
+              a._hit = b._hit = 1.0;
+            }
+          }
+        }
+        // Mouse nudges all atoms gently away (no capture-attraction)
+        if (mouse.active) {
+          for (const a of state.atoms) {
+            const dx = a.x - mouse.x, dy = a.y - mouse.y;
+            const d2 = dx * dx + dy * dy;
+            const R = 180;
+            if (d2 < R * R) {
+              const d = Math.sqrt(d2) || 1;
+              const k = (1 - d / R) * 0.6;
+              a.vx += (dx / d) * k;
+              a.vy += (dy / d) * k;
+            }
+          }
+        }
+        // Draw each atom
+        for (const a of state.atoms) {
+          const cx = a.x, cy = a.y, baseR = a.r;
+          // Hit halo (fades quickly)
+          if (a._hit && a._hit > 0) {
+            const hg = ctx.createRadialGradient(cx, cy, 0, cx, cy, baseR * 3.5);
+            hg.addColorStop(0, `rgba(255, 200, 100, ${(a._hit * 0.35).toFixed(2)})`);
+            hg.addColorStop(1, "rgba(255, 200, 100, 0)");
+            ctx.fillStyle = hg;
+            ctx.beginPath(); ctx.arc(cx, cy, baseR * 3.5, 0, Math.PI * 2); ctx.fill();
+            a._hit *= 0.85;
+            if (a._hit < 0.02) a._hit = 0;
+          }
+          // Orbit ellipses
+          for (const s of a.shells) {
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(s.tilt);
+            ctx.strokeStyle = palette.orbit;
+            ctx.lineWidth = 1.0;
+            ctx.beginPath();
+            ctx.ellipse(0, 0, baseR * s.rxK, baseR * s.ryK, 0, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+          }
+          // Nucleus glow + a few nucleon dots
+          const ng = ctx.createRadialGradient(cx, cy, 0, cx, cy, baseR * 0.45);
+          ng.addColorStop(0, "rgba(255, 130, 130, 0.55)");
+          ng.addColorStop(1, "rgba(255, 130, 130, 0)");
+          ctx.fillStyle = ng;
+          ctx.beginPath(); ctx.arc(cx, cy, baseR * 0.45, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = palette.nucleus;
+          ctx.beginPath(); ctx.arc(cx, cy, baseR * 0.18, 0, Math.PI * 2); ctx.fill();
+          // Electrons
+          for (const s of a.shells) {
+            const rx = baseR * s.rxK, ry = baseR * s.ryK;
+            for (let e = 0; e < s.electrons; e++) {
+              const phase = s.phase + state.t * s.speed + (e * Math.PI * 2 / s.electrons);
+              const lx = Math.cos(phase) * rx;
+              const ly = Math.sin(phase) * ry;
+              const ex = cx + lx * Math.cos(s.tilt) - ly * Math.sin(s.tilt);
+              const ey = cy + lx * Math.sin(s.tilt) + ly * Math.cos(s.tilt);
+              const tg = ctx.createRadialGradient(ex, ey, 0, ex, ey, baseR * 0.13);
+              tg.addColorStop(0, palette.electron.replace("0.95", "0.55"));
+              tg.addColorStop(1, palette.electron.replace("0.95", "0"));
+              ctx.fillStyle = tg;
+              ctx.beginPath(); ctx.arc(ex, ey, baseR * 0.13, 0, Math.PI * 2); ctx.fill();
+              ctx.fillStyle = palette.electron;
+              ctx.beginPath(); ctx.arc(ex, ey, 3.2, 0, Math.PI * 2); ctx.fill();
+            }
+          }
+        }
+      },
+    };
+
+    // ----- Solar System theme -----
+    // Sun anchored top-left, planets sweep across the viewport. Saturn gets
+    // a real ring, asteroid belt between Mars and Jupiter adds richness.
+    const solarSystem = {
+      init(state) {
+        state.t = 0;
+        state.cx = w * 0.18;
+        state.cy = h * 0.30;
+        const colors = ["#a3a3a3", "#e6c98d", "#5bb1ff", "#cf5d3a", "#d6b18e", "#e2c180", "#9bd0e8", "#5c7fd6"];
+        const names = ["Mercury", "Venus", "Earth", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune"];
+        state.planets = [];
+        const sizes = [5, 7, 7.5, 6.5, 16, 13, 10, 9.5];   // larger
+        const farR = Math.hypot(w, h) * 0.85;
+        for (let i = 0; i < 8; i++) {
+          state.planets.push({
+            orbit: 100 + (farR - 100) * (i / 7),
+            size: sizes[i],
+            color: colors[i],
+            name: names[i],
+            speed: 0.0048 / Math.sqrt(1 + i * 0.4),       // ~40% of prior speed
+            // Start spread along the visible top→bottom arc on the right side
+            // (-π/2 to π/2 — right semicircle).
+            phase: -Math.PI / 2 + Math.PI * (i / 8) + Math.random() * 0.1,
+            trail: [],
+            hasRing: i === 5, // Saturn
+          });
+        }
+        // Asteroid belt between Mars and Jupiter (indices 3 → 4)
+        state.belt = [];
+        const innerBelt = state.planets[3].orbit + 28;
+        const outerBelt = state.planets[4].orbit - 28;
+        for (let i = 0; i < 90; i++) {
+          state.belt.push({
+            orbit: innerBelt + Math.random() * (outerBelt - innerBelt),
+            size: 0.6 + Math.random() * 1.0,
+            speed: 0.0045 + Math.random() * 0.0035,
+            phase: Math.random() * Math.PI * 2,
+          });
+        }
+      },
+      tick(ctx, state) {
+        state.t += 1;
+        const cx = state.cx, cy = state.cy;
+        const sunR = 32;
+        // Layered corona — three gradients with shifted radii for depth
+        const corona1 = ctx.createRadialGradient(cx, cy, sunR * 0.4, cx, cy, sunR * 5);
+        corona1.addColorStop(0, "rgba(255, 220, 120, 0.55)");
+        corona1.addColorStop(0.3, "rgba(255, 170, 80, 0.25)");
+        corona1.addColorStop(1, "rgba(255, 100, 60, 0)");
+        ctx.fillStyle = corona1;
+        ctx.beginPath(); ctx.arc(cx, cy, sunR * 5, 0, Math.PI * 2); ctx.fill();
+        // Animated solar flare flicker — a second gradient that wobbles
+        const flicker = 0.85 + 0.15 * Math.sin(state.t * 0.18);
+        const corona2 = ctx.createRadialGradient(cx, cy, 0, cx, cy, sunR * 2.4);
+        corona2.addColorStop(0, `rgba(255, 240, 180, ${(0.85 * flicker).toFixed(2)})`);
+        corona2.addColorStop(0.5, `rgba(255, 180, 80, ${(0.35 * flicker).toFixed(2)})`);
+        corona2.addColorStop(1, "rgba(255, 170, 80, 0)");
+        ctx.fillStyle = corona2;
+        ctx.beginPath(); ctx.arc(cx, cy, sunR * 2.4, 0, Math.PI * 2); ctx.fill();
+        // Sun disk
+        ctx.fillStyle = "#ffd86b";
+        ctx.beginPath(); ctx.arc(cx, cy, sunR, 0, Math.PI * 2); ctx.fill();
+        // Asteroid belt
+        for (const a of state.belt) {
+          a.phase += a.speed;
+          const ax = cx + Math.cos(a.phase) * a.orbit;
+          const ay = cy + Math.sin(a.phase) * a.orbit;
+          ctx.fillStyle = "rgba(170, 150, 130, 0.65)";
+          ctx.beginPath(); ctx.arc(ax, ay, a.size, 0, Math.PI * 2); ctx.fill();
+        }
+        for (const p of state.planets) {
+          p.phase += p.speed;
+          // Right-semicircle only: planet sweeps from top (-π/2) down to
+          // bottom (+π/2) on the visible RIGHT side of the sun. When it
+          // would go behind (left side), wrap back to the top so it
+          // "re-enters from above".
+          if (p.phase > Math.PI / 2) {
+            p.phase = -Math.PI / 2;
+            p.trail.length = 0;  // clear the trail so it doesn't streak across
+          }
+          // Visible orbit arc (right semicircle).
+          ctx.strokeStyle = palette.orbit;
+          ctx.lineWidth = 0.7;
+          ctx.beginPath();
+          ctx.arc(cx, cy, p.orbit, -Math.PI / 2, Math.PI / 2);
+          ctx.stroke();
+          const px = cx + Math.cos(p.phase) * p.orbit;
+          const py = cy + Math.sin(p.phase) * p.orbit;
+          p.trail.push([px, py]);
+          if (p.trail.length > 28) p.trail.shift();
+          for (let i = 0; i < p.trail.length; i++) {
+            const a = i / p.trail.length;
+            ctx.fillStyle = p.color + Math.floor(a * 70 + 20).toString(16).padStart(2, "0");
+            ctx.beginPath(); ctx.arc(p.trail[i][0], p.trail[i][1], p.size * a * 0.55, 0, Math.PI * 2); ctx.fill();
+          }
+          // Saturn's ring — tilted ellipse around the planet
+          if (p.hasRing) {
+            ctx.save();
+            ctx.translate(px, py);
+            ctx.rotate(-0.4);
+            ctx.strokeStyle = "rgba(214, 177, 142, 0.55)";
+            ctx.lineWidth = 1.4;
+            ctx.beginPath();
+            ctx.ellipse(0, 0, p.size * 2.0, p.size * 0.55, 0, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.strokeStyle = "rgba(214, 177, 142, 0.30)";
+            ctx.lineWidth = 1.0;
+            ctx.beginPath();
+            ctx.ellipse(0, 0, p.size * 2.4, p.size * 0.70, 0, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+          }
+          // Planet
+          ctx.fillStyle = p.color;
+          ctx.beginPath(); ctx.arc(px, py, p.size, 0, Math.PI * 2); ctx.fill();
+        }
+      },
+    };
+
+    // ----- DNA helix theme -----
+    // Many small DNA molecules floating around the canvas like cells in a
+    // petri dish. Each one drifts in its own direction, rotates around its
+    // long axis, and has its own helix phase. Bounces off walls.
+    const dna = {
+      init(state) {
+        state.t = 0;
+        // Fewer, slightly larger, well-spaced strands so each reads clearly.
+        // Calm petri-dish vibe rather than noisy confetti.
+        const COUNT = Math.max(14, Math.min(28, Math.floor(w * h * 0.000016)));
+        state.cells = [];
+        for (let i = 0; i < COUNT; i++) {
+          const len = 70 + Math.random() * 50;
+          const amp = 9 + Math.random() * 5;
+          state.cells.push({
+            x: Math.random() * w,
+            y: Math.random() * h,
+            vx: (Math.random() - 0.5) * 0.45,
+            vy: (Math.random() - 0.5) * 0.45,
+            angle: Math.random() * Math.PI * 2,
+            spin: (Math.random() - 0.5) * 0.0015,
+            helixPhase: Math.random() * Math.PI * 2,
+            helixSpeed: 0.018 + Math.random() * 0.012,
+            len, amp,
+          });
+        }
+      },
+      tick(ctx, state) {
+        state.t += 1;
+        // Petri-dish backdrop — deep teal so the green/purple strands pop
+        // against a distinct lab-bench color, not the bare canvas.
+        ctx.fillStyle = palette.dark
+          ? "rgba(8, 36, 32, 0.55)"
+          : "rgba(216, 240, 232, 0.55)";
+        ctx.fillRect(0, 0, w, h);
+        for (const c of state.cells) {
+          c.x += c.vx; c.y += c.vy;
+          c.angle += c.spin;
+          c.helixPhase += c.helixSpeed;
+          // Bounce off walls with the molecule's bounding radius
+          const pad = c.len * 0.55;
+          if (c.x < pad)    { c.x = pad;    c.vx = Math.abs(c.vx); }
+          else if (c.x > w - pad) { c.x = w - pad; c.vx = -Math.abs(c.vx); }
+          if (c.y < pad)    { c.y = pad;    c.vy = Math.abs(c.vy); }
+          else if (c.y > h - pad) { c.y = h - pad; c.vy = -Math.abs(c.vy); }
+          // Tiny brownian wobble so they don't move in perfectly straight lines
+          c.vx += (Math.random() - 0.5) * 0.01;
+          c.vy += (Math.random() - 0.5) * 0.01;
+          const sp = Math.hypot(c.vx, c.vy);
+          if (sp > 1.0) { const k = 1.0 / sp; c.vx *= k; c.vy *= k; }
+          // Draw the molecule: local coordinates from -len/2 → +len/2 along
+          // the x axis, rotated by c.angle and translated to (c.x, c.y).
+          ctx.save();
+          ctx.translate(c.x, c.y);
+          ctx.rotate(c.angle);
+          // Soft neon glow on each strand — looks like fluorescent stained DNA.
+          ctx.shadowBlur = palette.dark ? 8 : 4;
+          const step = 6;
+          let rungIdx = 0;
+          for (let t = -c.len / 2; t <= c.len / 2; t += step) {
+            const ang = c.helixPhase + t * 0.09;
+            const y1 = Math.sin(ang) * c.amp;
+            const y2 = Math.sin(ang + Math.PI) * c.amp;
+            const depth1 = (Math.cos(ang) + 1) / 2;
+            const depth2 = (Math.cos(ang + Math.PI) + 1) / 2;
+            if (rungIdx % 2 === 0) {
+              const grad = ctx.createLinearGradient(t, y1, t, y2);
+              grad.addColorStop(0, palette.dark ? "rgba(140, 240, 200, 0.70)" : "rgba(40, 140, 90, 0.65)");
+              grad.addColorStop(1, palette.dark ? "rgba(200, 150, 240, 0.70)" : "rgba(120, 60, 160, 0.65)");
+              ctx.strokeStyle = grad;
+              ctx.lineWidth = 1.4;
+              ctx.shadowColor = "transparent";
+              ctx.beginPath(); ctx.moveTo(t, y1); ctx.lineTo(t, y2); ctx.stroke();
+            }
+            rungIdx++;
+            // Green strand bead with glow
+            ctx.shadowColor = palette.dark ? "rgba(140, 240, 200, 0.55)" : "transparent";
+            ctx.fillStyle = palette.dark
+              ? `rgba(140, 240, 200, ${(0.55 + depth1 * 0.4).toFixed(2)})`
+              : `rgba(40, 140, 90, ${(0.45 + depth1 * 0.45).toFixed(2)})`;
+            ctx.beginPath(); ctx.arc(t, y1, 1.3 + depth1 * 1.8, 0, Math.PI * 2); ctx.fill();
+            // Purple strand bead with glow
+            ctx.shadowColor = palette.dark ? "rgba(200, 150, 240, 0.55)" : "transparent";
+            ctx.fillStyle = palette.dark
+              ? `rgba(200, 150, 240, ${(0.55 + depth2 * 0.4).toFixed(2)})`
+              : `rgba(120, 60, 160, ${(0.45 + depth2 * 0.45).toFixed(2)})`;
+            ctx.beginPath(); ctx.arc(t, y2, 1.3 + depth2 * 1.8, 0, Math.PI * 2); ctx.fill();
+          }
+          ctx.shadowBlur = 0;
+          ctx.shadowColor = "transparent";
+          ctx.restore();
+        }
+      },
+    };
+
+    // ----- Wave interference theme -----
+    // Quiet interference field — only the CRESTS render, at low alpha, with
+    // larger cells. Reads as gentle ripples instead of a saturated heatmap.
+    const ripples = {
+      init(state) {
+        state.t = 0;
+        state.cell = 9;   // smaller cells → denser, more textured field
+        state.sources = [
+          { x: w * 0.30, y: h * 0.42, freq: 0.026 },
+          { x: w * 0.70, y: h * 0.58, freq: 0.026 },
+        ];
+      },
+      tick(ctx, state) {
+        state.t += 1;
+        // Dark violet → magenta sweep so the field doesn't read as "blue
+        // water" anymore. Crests are warm magenta/orange; troughs render as
+        // deep purple, on a violet backdrop.
+        ctx.fillStyle = palette.dark
+          ? "rgba(28, 8, 48, 0.55)"
+          : "rgba(245, 230, 248, 0.55)";
+        ctx.fillRect(0, 0, w, h);
+        const phase = state.t * 0.04;
+        const cell = state.cell;
+        const sources = state.sources;
+        for (let y = 0; y < h; y += cell) {
+          for (let x = 0; x < w; x += cell) {
+            let sum = 0;
+            for (let i = 0; i < sources.length; i++) {
+              const s = sources[i];
+              const dx = x - s.x, dy = y - s.y;
+              const d = Math.sqrt(dx * dx + dy * dy);
+              const amp = 1 / (1 + d * 0.005);
+              sum += Math.sin(d * s.freq - phase) * amp;
+            }
+            if (mouse.active) {
+              const dx = x - mouse.x, dy = y - mouse.y;
+              const d = Math.sqrt(dx * dx + dy * dy);
+              const amp = 1 / (1 + d * 0.005);
+              sum += Math.sin(d * 0.030 - phase * 1.3) * amp * 0.6;
+            }
+            const v = Math.max(-1, Math.min(1, sum / 1.4));
+            const intensity = Math.abs(v);
+            if (intensity < 0.22) continue;
+            const a = (intensity - 0.22) * 0.78;
+            if (v > 0) {
+              // Constructive: hot magenta/orange
+              ctx.fillStyle = palette.dark
+                ? `rgba(255, 140, 90, ${a.toFixed(3)})`
+                : `rgba(220, 60, 90, ${a.toFixed(3)})`;
+            } else {
+              // Destructive: deep violet (sinks back into the backdrop)
+              ctx.fillStyle = palette.dark
+                ? `rgba(120, 60, 180, ${(a * 0.7).toFixed(3)})`
+                : `rgba(140, 90, 200, ${(a * 0.7).toFixed(3)})`;
+            }
+            ctx.fillRect(x, y, cell, cell);
+          }
+        }
+        for (const s of sources) {
+          ctx.fillStyle = palette.dark ? "rgba(255, 220, 180, 0.95)" : "rgba(120, 40, 80, 0.95)";
+          ctx.beginPath(); ctx.arc(s.x, s.y, 5, 0, Math.PI * 2); ctx.fill();
+        }
+      },
+    };
+
+    // ----- Audio-reactive theme -----
+    // System-audio-driven spectrum + pulse. Uses getDisplayMedia so it can
+    // capture the audio from a SHARED CHROME TAB (Mac/PC), not the mic.
+    // Falls back to the microphone if the user cancels the share dialog.
+    //
+    // Mac how-to: when the share dialog appears, pick a Chrome tab that's
+    // playing audio AND tick "Share tab audio" before clicking Share. macOS
+    // can't capture system-wide audio from the browser without a virtual
+    // device like BlackHole — there's no browser-side workaround for that.
+    const audio = {
+      async init(state) {
+        state.ready = false;
+        state.error = null;
+        state.source = null;
+        state.pulse = 0;
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx || !navigator.mediaDevices) {
+          state.error = "Web Audio not available in this browser";
+          return;
+        }
+        const wireStream = async (stream, sourceLabel) => {
+          const audioCtx = new Ctx();
+          const src = audioCtx.createMediaStreamSource(stream);
+          const analyser = audioCtx.createAnalyser();
+          analyser.fftSize = 512;
+          analyser.smoothingTimeConstant = 0.8;
+          src.connect(analyser);
+          state.stream = stream;
+          state.audioCtx = audioCtx;
+          state.analyser = analyser;
+          state.freq = new Uint8Array(analyser.frequencyBinCount);
+          state.source = sourceLabel;
+          state.ready = true;
+        };
+        // 1) Try system / tab audio via getDisplayMedia. User must tick
+        //    "Share tab audio" in the picker. We don't care about the video
+        //    track, but Chrome requires asking for it; we stop it right away.
+        try {
+          if (!navigator.mediaDevices.getDisplayMedia) throw new Error("display capture not supported");
+          const stream = await navigator.mediaDevices.getDisplayMedia({
+            video: { width: 1, height: 1 },
+            audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+          });
+          // Stop the video track — we only want the audio
+          stream.getVideoTracks().forEach(t => t.stop());
+          if (stream.getAudioTracks().length === 0) {
+            stream.getTracks().forEach(t => t.stop());
+            throw new Error("no audio in share — pick a tab and tick 'Share tab audio'");
+          }
+          await wireStream(stream, "tab");
+          return;
+        } catch (err) {
+          // User cancelled or no audio shared — fall through to mic.
+          state.fallbackReason = err.message || String(err);
+        }
+        // 2) Fallback to microphone so the theme isn't useless if tab share
+        //    was denied.
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+          });
+          await wireStream(stream, "mic");
+        } catch (err) {
+          state.error = err.message || String(err);
+        }
+      },
+      dispose(state) {
+        try { state.stream?.getTracks?.().forEach(t => t.stop()); } catch {}
+        try { state.audioCtx?.close?.(); } catch {}
+      },
+      tick(ctx, state) {
+        // Status message while waiting for mic / on error
+        if (!state.ready) {
+          ctx.fillStyle = palette.dark ? "rgba(200, 220, 255, 0.85)" : "rgba(30, 60, 120, 0.85)";
+          ctx.font = "13px ui-monospace, monospace";
+          ctx.textAlign = "center";
+          const lines = state.error
+            ? [`🎵 audio theme failed: ${state.error}`]
+            : [
+                "🎵 audio reactive — sharing a tab's audio…",
+                "Pick a Chrome tab playing audio and tick 'Share tab audio'.",
+                "(If you cancel, we'll fall back to your microphone.)",
+              ];
+          let y = h / 2 - (lines.length - 1) * 10;
+          for (const line of lines) {
+            ctx.fillText(line, w / 2, y);
+            y += 20;
+          }
+          ctx.textAlign = "start";
+          return;
+        }
+        state.analyser.getByteFrequencyData(state.freq);
+        // Bass = first ~10 bins; midrange / treble fill the rest.
+        let bass = 0;
+        for (let i = 0; i < 10; i++) bass += state.freq[i];
+        bass /= 10 * 255;
+        state.pulse = state.pulse * 0.85 + bass * 0.45;
+        // Pulse rings from center, scaled by bass
+        const cx = w / 2, cy = h / 2;
+        const maxR = Math.hypot(w, h) / 2;
+        for (let i = 0; i < 6; i++) {
+          const r = (i + 1) * (maxR / 6) * (0.4 + state.pulse * 0.9);
+          const alpha = (1 - i / 6) * 0.35 * state.pulse;
+          if (alpha <= 0.01) continue;
+          ctx.strokeStyle = palette.dark
+            ? `rgba(120, 220, 255, ${alpha.toFixed(3)})`
+            : `rgba(30, 110, 200, ${alpha.toFixed(3)})`;
+          ctx.lineWidth = 1.4;
+          ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+        }
+        // Frequency bars — mirrored at left and right edges so the visualizer
+        // is visible in the gutters even with chat bubbles in the middle.
+        const bins = Math.min(state.freq.length, 96);
+        const barW = w / (bins * 2);
+        const baseY = h;
+        const maxH = h * 0.55;
+        for (let i = 0; i < bins; i++) {
+          const v = state.freq[i] / 255;
+          const barH = v * maxH;
+          const hue = palette.dark ? (180 + i * 1.8) : (200 + i * 1.0);
+          const sat = palette.dark ? 80 : 55;
+          const light = palette.dark ? 65 : 45;
+          ctx.fillStyle = `hsla(${hue}, ${sat}%, ${light}%, ${(0.55 + v * 0.35).toFixed(2)})`;
+          ctx.fillRect(i * barW, baseY - barH, barW - 1, barH);
+          ctx.fillRect(w - (i + 1) * barW, baseY - barH, barW - 1, barH);
+        }
+        // Tiny source label so the user knows whether they got tab audio or
+        // the mic fallback.
+        ctx.fillStyle = palette.dark ? "rgba(180, 200, 230, 0.55)" : "rgba(60, 80, 140, 0.55)";
+        ctx.font = "11px ui-monospace, monospace";
+        ctx.fillText(`🎵 ${state.source === "tab" ? "tab audio" : "mic (tab share denied)"}`, 12, h - 6);
+      },
+    };
+
+    // ----- Flock / boids theme -----
+    // Lots of small triangles flying together with alignment + cohesion +
+    // separation; cursor scares the flock so they veer away.
+    const flock = {
+      init(state) {
+        const COUNT = Math.max(60, Math.min(160, Math.floor(w * h * 0.00010)));
+        state.boids = [];
+        for (let i = 0; i < COUNT; i++) {
+          const a = Math.random() * Math.PI * 2;
+          state.boids.push({
+            x: Math.random() * w, y: Math.random() * h,
+            vx: Math.cos(a) * 1.4, vy: Math.sin(a) * 1.4,
+          });
+        }
+      },
+      tick(ctx, state) {
+        // Warm dusk-sky tint so the flock reads differently from the cool
+        // constellation/aurora themes.
+        ctx.fillStyle = palette.dark
+          ? "rgba(48, 28, 38, 0.55)"
+          : "rgba(255, 232, 210, 0.55)";
+        ctx.fillRect(0, 0, w, h);
+        const VIEW = 60, SEP = 22, MAX = 2.2;
+        for (let i = 0; i < state.boids.length; i++) {
+          const b = state.boids[i];
+          let avgVX = 0, avgVY = 0, ctrX = 0, ctrY = 0, sepX = 0, sepY = 0;
+          let cnt = 0;
+          for (let j = 0; j < state.boids.length; j++) {
+            if (i === j) continue;
+            const o = state.boids[j];
+            const dx = o.x - b.x, dy = o.y - b.y;
+            const d2 = dx * dx + dy * dy;
+            if (d2 < VIEW * VIEW) {
+              avgVX += o.vx; avgVY += o.vy;
+              ctrX += o.x; ctrY += o.y;
+              cnt++;
+              if (d2 < SEP * SEP) {
+                const d = Math.sqrt(d2) || 1;
+                sepX -= dx / d; sepY -= dy / d;
+              }
+            }
+          }
+          if (cnt > 0) {
+            avgVX /= cnt; avgVY /= cnt;
+            ctrX = ctrX / cnt - b.x; ctrY = ctrY / cnt - b.y;
+            b.vx += (avgVX - b.vx) * 0.03 + ctrX * 0.0008 + sepX * 0.05;
+            b.vy += (avgVY - b.vy) * 0.03 + ctrY * 0.0008 + sepY * 0.05;
+          }
+          if (mouse.active) {
+            const dx = b.x - mouse.x, dy = b.y - mouse.y;
+            const d2 = dx * dx + dy * dy;
+            if (d2 < 110 * 110) {
+              const d = Math.sqrt(d2) || 1;
+              const k = (1 - d / 110) * 0.45;
+              b.vx += (dx / d) * k;
+              b.vy += (dy / d) * k;
+            }
+          }
+          const sp = Math.hypot(b.vx, b.vy);
+          if (sp > MAX) { const k = MAX / sp; b.vx *= k; b.vy *= k; }
+          b.x += b.vx; b.y += b.vy;
+          if (b.x < 0) b.x = w; if (b.x > w) b.x = 0;
+          if (b.y < 0) b.y = h; if (b.y > h) b.y = 0;
+        }
+        // Little V-shaped bird silhouettes against the warm dusk sky.
+        // Light cream in dark mode (silhouetted by daylight), dark in light
+        // mode (silhouetted by sky).
+        ctx.strokeStyle = palette.dark
+          ? "rgba(255, 235, 210, 0.92)"
+          : "rgba(60, 30, 30, 0.82)";
+        ctx.lineWidth = 1.6;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        for (const b of state.boids) {
+          const a = Math.atan2(b.vy, b.vx);
+          ctx.save();
+          ctx.translate(b.x, b.y);
+          ctx.rotate(a);
+          // Each "bird" is two strokes meeting at the body — like a wide V.
+          ctx.beginPath();
+          ctx.moveTo(-6, -4);
+          ctx.quadraticCurveTo(-2, 0, 0, -1);
+          ctx.quadraticCurveTo(-2, 0, -6, 4);
+          ctx.stroke();
+          ctx.restore();
+        }
+      },
+    };
+
+    // ----- Matrix rain theme -----
+    // Slower fall + flat-black backdrop (no glass bleed-through). The fade
+    // rectangle uses solid black so previous frames cleanly disappear.
+    const rain = {
+      init(state) {
+        state.cols = [];
+        const COL_W = 10;
+        const cols = Math.ceil(w / COL_W);
+        state.colW = COL_W;
+        for (let i = 0; i < cols; i++) {
+          state.cols.push({
+            y: Math.random() * h,
+            speed: 0.3 + Math.random() * 0.7,
+            len: 12 + Math.floor(Math.random() * 22),
+            buf: [],
+          });
+        }
+        state.glyphs = "01アイウエオカキクケコサシスセソタチツテト10100110".split("");
+      },
+      tick(ctx, state) {
+        // Lay a fully opaque black base every frame so we never get a
+        // residue grid from the constellation/glass behind. The trail effect
+        // is created with a translucent black overlay instead of partial clear.
+        ctx.fillStyle = "#000";
+        ctx.fillRect(0, 0, w, h);
+        // After the base, soft trailing fade (very light) so newer glyphs leave
+        // a ghost. Pure black keeps grid artifacts from re-appearing.
+        ctx.fillStyle = "rgba(0, 0, 0, 0.08)";
+        ctx.fillRect(0, 0, w, h);
+        // Tighter row spacing → more characters stacked per column.
+        const ROW_H = 11;
+        ctx.font = "11px ui-monospace, monospace";
+        for (let i = 0; i < state.cols.length; i++) {
+          const c = state.cols[i];
+          c.y += c.speed;
+          if (c.y - c.len * ROW_H > h) {
+            c.y = -Math.random() * h;
+            c.speed = 0.3 + Math.random() * 0.7;
+            c.len = 20 + Math.floor(Math.random() * 28); // longer streamers
+            c.buf = [];
+          }
+          for (let k = 0; k < c.len; k++) {
+            const yy = c.y - k * ROW_H;
+            if (yy < -20 || yy > h + 20) continue;
+            if (!c.buf[k] || Math.random() < 0.025) {
+              c.buf[k] = state.glyphs[(Math.random() * state.glyphs.length) | 0];
+            }
+            const ch = c.buf[k];
+            const alpha = k === 0 ? 1.0 : Math.max(0, 0.92 - k * 0.045);
+            ctx.fillStyle = k === 0
+              ? `rgba(220, 255, 220, ${alpha.toFixed(2)})`
+              : `rgba(60, 200, 100, ${alpha.toFixed(2)})`;
+            ctx.fillText(ch, i * state.colW + 1, yy);
+          }
+        }
+      },
+    };
+
+    // ----- Off / None (plain near-black canvas) -----
+    // Pure #000 was too harsh — it pushed text contrast to a painful level
+    // through the glass bubbles. Using a soft near-black instead so the
+    // page reads as quiet rather than aggressive.
+    const off = {
+      init() {},
+      tick(ctx) {
+        ctx.fillStyle = palette.dark ? "#0a0f17" : "#e6ebf2";
+        ctx.fillRect(0, 0, w, h);
+      },
+    };
+
+    const themes = { constellation, galaxy, aurora, solarSystem, dna, ripples, flock, rain, audio, off };
+    let currentName = localStorage.getItem("viewer:bgTheme");
+    // `audio` was retired from the picker — silently migrate any old saved
+    // value so users don't get an unexpected mic/share prompt on next load.
+    if (currentName === "audio") currentName = "constellation";
+    if (!themes[currentName]) currentName = "constellation";
+    let state = {};
+
+    function applyTheme(name) {
+      if (!themes[name]) name = "constellation";
+      // Release resources (mic, audio context) from the previous theme.
+      try { themes[currentName]?.dispose?.(state); } catch {}
+      currentName = name;
+      localStorage.setItem("viewer:bgTheme", name);
+      state = {};
+      // Themes can be async (e.g. audio needs mic permission). Either form works.
+      const r = themes[name].init(state, w, h);
+      if (r && typeof r.then === "function") r.catch(() => {});
+      document.querySelectorAll(".bg-popover button").forEach(b => {
+        b.classList.toggle("active", b.dataset.theme === name);
+      });
+    }
+
+    function resize() {
+      dpr = Math.max(1, window.devicePixelRatio || 1);
+      w = window.innerWidth;
+      h = window.innerHeight;
+      canvas.width = Math.floor(w * dpr);
+      canvas.height = Math.floor(h * dpr);
+      canvas.style.width = w + "px";
+      canvas.style.height = h + "px";
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      state = {};
+      themes[currentName].init(state, w, h);
+    }
+    resize();
+    window.addEventListener("resize", () => {
+      clearTimeout(resize._t);
+      resize._t = setTimeout(resize, 120);
+    });
+    window.addEventListener("mousemove", (e) => {
+      mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true;
+    }, { passive: true });
+    window.addEventListener("mouseout", () => { mouse.active = false; });
+
+    let running = !document.hidden;
+    // Single-token RAF chain so multiple visibilitychange events (or other
+    // restarts) can never run two animation loops in parallel — that was
+    // causing the field to speed up every time the tab regained focus.
+    let tickToken = 0;
+    function startTickChain() {
+      tickToken++;
+      const myToken = tickToken;
+      const loop = () => {
+        if (myToken !== tickToken || !running) return;
+        // rain + off paint their own opaque backdrop; everyone else wants a
+        // clear-to-transparent each frame so the page bg shows through.
+        if (currentName !== "rain" && currentName !== "off") ctx.clearRect(0, 0, w, h);
+        themes[currentName].tick(ctx, state, mouse, w, h);
+        drawThemeWatermark();
+        requestAnimationFrame(loop);
+      };
+      requestAnimationFrame(loop);
+    }
+    document.addEventListener("visibilitychange", () => {
+      running = !document.hidden;
+      if (running) startTickChain();
+    });
+    startTickChain();
+
+    // Small clickable "theme name" watermark at the bottom-right of the
+    // canvas — replaces the header bg button. Hit-testing handled via a
+    // sibling DOM element so we don't need pointer-events on the canvas.
+    function drawThemeWatermark() {
+      const label = themeLabel(currentName);
+      ctx.save();
+      ctx.font = "600 11px ui-monospace, monospace";
+      ctx.textBaseline = "alphabetic";
+      const text = label;
+      const padX = 14, padY = 14;
+      const m = ctx.measureText(text);
+      const tx = w - padX - m.width;
+      const ty = h - padY;
+      // Subtle pill
+      const pillW = m.width + 18, pillH = 22;
+      ctx.fillStyle = palette.dark ? "rgba(0, 0, 0, 0.35)" : "rgba(255, 255, 255, 0.45)";
+      ctx.beginPath();
+      const rx = w - padX - pillW + 9, ry = ty - 15;
+      if (ctx.roundRect) ctx.roundRect(rx, ry, pillW, pillH, 10);
+      else ctx.rect(rx, ry, pillW, pillH);
+      ctx.fill();
+      // Text
+      ctx.fillStyle = palette.dark ? "rgba(220, 230, 255, 0.85)" : "rgba(40, 60, 100, 0.85)";
+      ctx.fillText(text, tx, ty);
+      ctx.restore();
+      // Update the hit area to match
+      if (themeHitEl) {
+        themeHitEl.style.width = pillW + "px";
+        themeHitEl.style.height = pillH + "px";
+        themeHitEl.style.right = padX + "px";
+        themeHitEl.style.bottom = (padY - 7) + "px";
+      }
+    }
+    function themeLabel(name) {
+      const labels = {
+        constellation: "🕸️ Constellation",
+        galaxy: "🌌 Milky Way",
+        aurora: "🌈 Aurora",
+        solarSystem: "🪐 Solar System",
+        dna: "🧬 DNA helix",
+        ripples: "💧 Wave interference",
+        flock: "🐦 Flock",
+        rain: "🌧️ Matrix rain",
+        off: "⬛ None",
+      };
+      return labels[name] || name;
+    }
+    // DOM hit-area for the watermark — keeps the canvas pointer-events:none
+    // but still lets a click open the picker.
+    const themeHitEl = document.createElement("div");
+    themeHitEl.id = "bg-theme-hit";
+    themeHitEl.style.cssText = "position:fixed;z-index:1500;cursor:pointer;background:transparent;border-radius:10px;";
+    document.body.appendChild(themeHitEl);
+    themeHitEl.title = "Change background theme";
+
+    // Wire the in-canvas watermark to open the picker. (Header button
+    // exists as a fallback if present, but the watermark is primary.)
+    const bgBtn = document.getElementById("toggle-bg");
+    const bgPop = document.getElementById("bg-popover");
+    if (bgPop) {
+      // Re-anchor the popover to the watermark when opened via watermark.
+      const openPicker = () => {
+        bgPop.classList.add("open");
+        // Position over the watermark (bottom-right of viewport) when opened
+        // from there. Header-button path uses the original top-right anchor.
+        bgPop.style.position = "fixed";
+        bgPop.style.bottom = "44px";
+        bgPop.style.right = "16px";
+        bgPop.style.top = "auto";
+      };
+      themeHitEl.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (bgPop.classList.contains("open")) bgPop.classList.remove("open");
+        else openPicker();
+      });
+      if (bgBtn) {
+        bgBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          bgPop.style.position = ""; bgPop.style.bottom = "";
+          bgPop.style.right = ""; bgPop.style.top = "";
+          bgPop.classList.toggle("open");
+        });
+      }
+      bgPop.querySelectorAll("button[data-theme]").forEach(b => {
+        b.addEventListener("click", () => {
+          applyTheme(b.dataset.theme);
+          bgPop.classList.remove("open");
+        });
+      });
+      document.addEventListener("click", (e) => {
+        if (!bgPop.contains(e.target) && e.target !== bgBtn && e.target !== themeHitEl) {
+          bgPop.classList.remove("open");
+        }
+      });
+    }
+    applyTheme(currentName);
+  })();
 
   // ---- Bootstrap -------------------------------------------------------
   (async () => {
