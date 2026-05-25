@@ -18,6 +18,7 @@
     --accent: #0969da; --accent-bg: #ddf4ff; --code-bg: #f6f8fa;
     --user-bg: #f0f6ff; --assistant-bg: transparent; --thinking-bg: #fff8e1;
     --tool-bg: #f6f8fa; --highlight: #fff8c5; --highlight-border: #d4a72c;
+    --selection-bg: #b6e3ff; --selection-fg: #0a3052;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -27,22 +28,265 @@
       --thinking-bg: #1a1d2e;
       --thinking-accent: #818cf8;
       --tool-bg: #161b22; --highlight: #4a3f00; --highlight-border: #d4a72c;
+      --selection-bg: #1f6feb; --selection-fg: #ffffff;
     }
+  }
+  /* Browser default selection is nearly invisible on the dark theme,
+     so force a strong, theme-aware yellow that works on text, code,
+     and across line wraps in long blocks. */
+  ::selection {
+    background: var(--selection-bg);
+    color: var(--selection-fg);
+    text-shadow: none;
+  }
+  ::-moz-selection {
+    background: var(--selection-bg);
+    color: var(--selection-fg);
+    text-shadow: none;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); }
   body {
     font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --rail-w: 300px;
+    --rail-w-collapsed: 56px;
+    padding-left: var(--rail-w);
+    transition: padding-left 0.18s ease;
   }
+  body.rail-collapsed { padding-left: var(--rail-w-collapsed); }
+
+  /* ---- Left navigation rail ---- */
+  .rail {
+    position: fixed; left: 0; top: 0; bottom: 0;
+    width: var(--rail-w);
+    background: var(--bg);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    z-index: 90;
+    transition: width 0.18s ease;
+  }
+  body.rail-collapsed .rail { width: var(--rail-w-collapsed); }
+  body.rail-resizing .rail,
+  body.rail-resizing { transition: none !important; }
+  /* Resize handle on the right edge — wider hit zone, thin visible line. */
+  .rail-resizer {
+    position: absolute; top: 0; right: -3px; bottom: 0;
+    width: 6px;
+    cursor: col-resize;
+    z-index: 95;
+    background: transparent;
+    transition: background 0.12s;
+  }
+  .rail-resizer:hover,
+  body.rail-resizing .rail-resizer { background: var(--accent); opacity: 0.35; }
+  body.rail-collapsed .rail-resizer { display: none; }
+  .rail-head {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .rail-toggle {
+    background: transparent; border: 1px solid var(--border);
+    border-radius: 6px; cursor: pointer;
+    width: 30px; height: 30px;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: var(--fg); font-size: 14px;
+  }
+  .rail-toggle:hover { border-color: var(--accent); color: var(--accent); }
+  .rail-brand {
+    font-weight: 600; font-size: 13px; letter-spacing: 0.02em;
+    overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  }
+  body.rail-collapsed .rail-brand { display: none; }
+  .rail-nav {
+    display: flex; flex-direction: column; gap: 2px;
+    padding: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .rail-section-btn {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px;
+    background: transparent; border: none;
+    border-radius: 6px; cursor: pointer;
+    color: var(--fg); font: inherit; font-size: 13px;
+    text-align: left; width: 100%;
+  }
+  .rail-section-btn:hover { background: var(--accent-bg); }
+  .rail-section-btn.active {
+    background: var(--accent-bg);
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .rail-ico { font-size: 14px; width: 18px; text-align: center; flex-shrink: 0; }
+  .rail-text { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .rail-count {
+    font-size: 11px;
+    color: var(--muted);
+    background: var(--code-bg);
+    padding: 0 6px; border-radius: 10px;
+    min-width: 18px; text-align: center;
+  }
+  body.rail-collapsed .rail-text,
+  body.rail-collapsed .rail-count { display: none; }
+  body.rail-collapsed .rail-body { display: none; }
+  body.rail-collapsed .rail-section-btn { justify-content: center; }
+
+  .rail-body {
+    flex: 1; min-height: 0;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .rail-pane {
+    flex: 1; min-height: 0;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .rail-pane[hidden] { display: none; }
+  .rail-pane-head {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  }
+  .rail-pane-head input[type="text"] {
+    flex: 1; min-width: 120px;
+    font: inherit; font-size: 12px;
+    padding: 5px 8px;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg); color: var(--fg);
+  }
+  .rail-pane-head button {
+    font: inherit; font-size: 12px;
+    background: var(--bg); color: var(--fg);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 4px 8px; cursor: pointer;
+  }
+  .rail-pane-head button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .rail-pane-head button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .rail-send {
+    background: var(--accent) !important;
+    color: white !important;
+    border-color: var(--accent) !important;
+  }
+  .rail-send:hover:not(:disabled) { filter: brightness(1.06); }
+  .rail-hint { font-size: 11px; color: var(--muted); }
+  .rail-list {
+    flex: 1; min-height: 0; overflow-y: auto;
+    padding: 6px;
+  }
+  .rail-empty {
+    padding: 20px 10px; text-align: center;
+    color: var(--muted); font-size: 12px;
+  }
+  .rail-search-row { display: flex; gap: 6px; width: 100%; align-items: center; }
+  .rail-search-row input { flex: 1; min-width: 0; }
+  .rail-ai-progress {
+    width: 100%;
+    margin-top: 6px;
+    padding: 4px 8px;
+    font-size: 11px;
+    color: var(--muted);
+    background: var(--code-bg);
+    border-radius: 4px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #rail-ai-batch { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
+  #rail-ai-batch:disabled { opacity: 0.6; }
+  #rail-project-select {
+    font: inherit; font-size: 12px;
+    background: var(--bg); color: var(--fg);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 5px 8px; height: 30px; line-height: 1;
+    max-width: 140px;
+    cursor: pointer;
+    box-sizing: border-box;
+    text-overflow: ellipsis;
+    appearance: menulist;
+  }
+  #rail-project-select:hover { border-color: var(--accent); }
+  #rail-project-select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  /* Match heights across the search-row so the input, select, and the two
+     buttons sit on the same baseline regardless of their default heights. */
+  .rail-pane-head .rail-search-row > * { height: 30px; box-sizing: border-box; }
+  .rail-pane-head .rail-search-row input { padding: 5px 8px; }
+  .rail-pane-head .rail-search-row button { padding: 0 8px; }
+  /* ---- Compact rail session cards ---- */
+  .rail-list .picker-item {
+    width: 100%;
+    padding: 6px 8px;
+    gap: 3px;
+    margin-bottom: 2px;
+  }
+  .rail-list .picker-item .preview {
+    font-size: 12.5px;
+    line-height: 1.35;
+    -webkit-line-clamp: 2;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .rail-list .picker-item.active .preview { color: var(--accent); font-weight: 600; }
+  /* One compact meta line: smaller pills, hide the project chip + age inside
+     the card body since project is filtered via the select. */
+  .rail-list .picker-item .pills-row { gap: 4px; }
+  .rail-list .picker-item .pills {
+    display: flex; flex-wrap: wrap; gap: 3px;
+    flex: 1; min-width: 0;
+  }
+  .rail-list .picker-item .pill {
+    font-size: 10px;
+    padding: 1px 6px;
+  }
+  .rail-list .picker-item .pill.project,
+  .rail-list .picker-item .pill.age { display: none; }
+  /* Buttons (ai + rename + resume) reveal on card hover to declutter the resting state. */
+  .rail-list .picker-item .rename-btn,
+  .rail-list .picker-item .resume-btn,
+  .rail-list .picker-item .ai-btn {
+    width: 24px; min-width: 24px; max-width: 24px;
+    height: 24px; min-height: 24px; max-height: 24px;
+    font-size: 11px;
+    opacity: 0;
+    transition: opacity 0.12s, color 0.12s, border-color 0.12s, background 0.12s;
+  }
+  .rail-list .picker-item:hover .rename-btn,
+  .rail-list .picker-item:hover .resume-btn,
+  .rail-list .picker-item:hover .ai-btn,
+  .rail-list .picker-item.active .rename-btn,
+  .rail-list .picker-item.active .resume-btn,
+  .rail-list .picker-item.active .ai-btn { opacity: 1; }
+  .rail-list .picker-group-head { padding: 8px 6px 4px; font-size: 9.5px; }
+  .rail-list .picker-group-head.pinned { padding-top: 4px; }
   header {
     position: sticky; top: 0; z-index: 100;
-    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-    padding: 10px 24px;
+    display: flex; align-items: center; gap: 8px; flex-wrap: nowrap;
+    padding: 8px 16px;
     background: var(--bg);
     border-bottom: 1px solid var(--border);
     backdrop-filter: blur(8px);
+    min-height: 48px;
   }
   header .title { font-weight: 600; font-size: 14px; }
+  header .header-spacer { flex: 1; }
+  header .session-crumb {
+    display: flex; align-items: center; gap: 6px;
+    min-width: 0; flex: 0 1 auto;
+    font-size: 13px;
+    overflow: hidden;
+  }
+  header .crumb-project {
+    color: var(--muted); font-size: 11.5px;
+    background: var(--code-bg);
+    padding: 2px 8px; border-radius: 10px;
+    white-space: nowrap;
+  }
+  header .crumb-sep { color: var(--muted); }
+  header .crumb-title {
+    font-weight: 600; color: var(--fg);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    max-width: 60vw;
+  }
+  /* Floating dock is replaced by the rail's Pending/Sent tabs — hide for good. */
+  .dock { display: none !important; }
   /* Session picker button + popover */
   .picker-wrap { position: relative; }
   .picker-btn {
@@ -158,6 +402,12 @@
     color: var(--muted);
     padding: 8px 10px 4px;
   }
+  .picker-group-head.pinned {
+    color: var(--accent);
+    border-bottom: 1px dashed var(--border);
+    margin-bottom: 2px;
+  }
+  .picker-group-head.pinned::before { content: "📍 "; }
   .picker-item {
     display: flex; flex-direction: column; gap: 6px;
     padding: 8px 10px;
@@ -226,10 +476,12 @@
   .picker-item.active .pill.msgs {
     background: var(--bg); border-color: var(--accent);
   }
-  /* Resume button on the right side of each session card — icon only.
-     Locked dimensions + overflow:hidden so any stray text can't break layout. */
-  .picker-item .resume-btn {
-    margin-left: auto;
+  /* Resume + rename + ai-title buttons on the right side of each session
+     card — icon only. Locked dimensions + overflow:hidden so any stray text
+     can't break layout. */
+  .picker-item .resume-btn,
+  .picker-item .rename-btn,
+  .picker-item .ai-btn {
     background: transparent;
     border: 1px solid var(--border);
     border-radius: 6px;
@@ -255,7 +507,10 @@
     text-overflow: clip;
     transition: color 0.12s, background 0.12s, border-color 0.12s;
   }
-  .picker-item .resume-btn:hover {
+  .picker-item .ai-btn { margin-left: auto; }
+  .picker-item .resume-btn:hover,
+  .picker-item .rename-btn:hover,
+  .picker-item .ai-btn:hover {
     color: var(--accent);
     border-color: var(--accent);
     background: var(--accent-bg);
@@ -323,8 +578,16 @@
     border: 1px solid var(--border);
     border-radius: 6px; padding: 4px 10px;
     cursor: pointer; font: inherit; font-size: 12px;
+    transition: color 0.12s, background 0.12s, border-color 0.12s;
   }
+  header button.toggle:hover { color: var(--accent); border-color: var(--accent); }
   header button.toggle.active { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
+  header .counter {
+    font-size: 11px; color: var(--muted);
+    background: var(--code-bg);
+    padding: 2px 8px; border-radius: 10px;
+    min-width: 28px; text-align: center;
+  }
 
   /* Cross-session search modal */
   .search-overlay {
@@ -740,9 +1003,68 @@
     color: inherit;
     border-bottom: 2px solid var(--highlight-border);
     padding: 0 1px;
-    cursor: help;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: box-shadow 0.18s, background 0.18s;
   }
+  .md mark.anno:hover { box-shadow: 0 0 0 2px var(--highlight-border); }
+  .inline-anno-popover {
+    position: absolute;
+    z-index: 1400;
+    max-width: 340px;
+    min-width: 220px;
+    background: var(--bg);
+    border: 1px solid var(--highlight-border);
+    border-left: 3px solid var(--highlight-border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.3);
+    font-size: 12.5px;
+    color: var(--fg);
+  }
+  .inline-anno-popover .iap-comment {
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.4;
+  }
+  .inline-anno-popover .iap-meta {
+    margin-top: 6px;
+    color: var(--muted);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .inline-anno-popover .iap-actions {
+    margin-top: 6px;
+    display: flex;
+    gap: 4px;
+    justify-content: flex-end;
+  }
+  .inline-anno-popover .iap-actions button {
+    font: inherit; font-size: 11px;
+    padding: 2px 8px;
+    background: var(--bg); color: var(--fg);
+    border: 1px solid var(--border); border-radius: 4px;
+    cursor: pointer;
+  }
+  .inline-anno-popover .iap-actions button:hover {
+    border-color: var(--accent); color: var(--accent);
+  }
+  .md mark.anno-pulse {
+    box-shadow: 0 0 0 4px var(--highlight-border);
+    background: var(--selection-bg);
+  }
+  @keyframes annoPulse {
+    0%   { box-shadow: 0 0 0 0px var(--highlight-border); }
+    50%  { box-shadow: 0 0 0 6px var(--highlight-border); }
+    100% { box-shadow: 0 0 0 0px var(--highlight-border); }
+  }
+  .md mark.anno-pulse { animation: annoPulse 1.6s ease-out 1; }
 
+  .code-block {
+    position: relative;
+    margin: 10px 0;
+  }
   .md pre {
     position: relative;
     background: var(--code-bg);
@@ -756,6 +1078,7 @@
     overflow-wrap: normal;
     word-break: normal;
   }
+  .code-block > pre { margin: 0; }
   .md pre code {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 13px;
@@ -793,7 +1116,9 @@
     transition: opacity 0.15s, color 0.15s;
     font-family: inherit;
   }
-  .md pre:hover .copy-btn { opacity: 1; }
+  .md pre:hover .copy-btn,
+  .code-block:hover .copy-btn,
+  .copy-btn:focus { opacity: 1; }
   .copy-btn.copied { color: #1a7f37; border-color: #1a7f37; opacity: 1; }
 
   .thinking {
@@ -1166,17 +1491,54 @@
     padding: 8px 10px;
     margin-bottom: 8px;
     background: var(--bg);
+    cursor: pointer;
+    position: relative;
+    transition: border-color 0.12s, background 0.12s;
   }
-  .anno-card .quote {
+  .anno-card:hover { border-color: var(--accent); background: var(--accent-bg); }
+  .anno-card::after {
+    content: "↗";
+    position: absolute;
+    top: 6px; right: 8px;
+    color: var(--muted);
+    font-size: 11px;
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+  .anno-card:hover::after { opacity: 1; color: var(--accent); }
+  .anno-card .jump-hint {
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 4px;
+    font-style: italic;
+  }
+  .anno-card .quote-block {
     font-size: 11.5px;
     color: var(--muted);
     border-left: 3px solid var(--highlight-border);
     padding-left: 6px;
     margin-bottom: 4px;
-    max-height: 60px;
+    max-height: 140px;
     overflow: auto;
     white-space: pre-wrap;
     word-break: break-word;
+  }
+  .anno-card .quote-block .ctx { opacity: 0.55; font-style: italic; }
+  .anno-card .quote-block .ctx.before::after { content: ""; }
+  .anno-card .quote-block .quote-mark {
+    background: var(--selection-bg);
+    color: var(--selection-fg);
+    padding: 0 2px;
+    border-radius: 2px;
+    font-style: normal;
+  }
+  .anno-card .ctx-toggle {
+    font-size: 10px;
+    color: var(--muted);
+    cursor: pointer;
+    user-select: none;
+    margin-bottom: 4px;
+    text-decoration: underline dotted;
   }
   .anno-card .comment { font-size: 12.5px; white-space: pre-wrap; }
   .anno-card .actions { margin-top: 4px; display: flex; gap: 4px; justify-content: flex-end; }
@@ -1201,33 +1563,93 @@
 </style>
 </head>
 <body>
-<header>
-  <span class="title">Atlas</span>
-  <div class="picker-wrap">
-    <button class="picker-btn" id="picker-btn" type="button">
-      <span class="label" id="picker-label">Loading…</span>
-      <span class="chev">▾</span>
-    </button>
-    <div class="picker-menu" id="picker-menu" role="listbox">
-      <div class="picker-projects" id="picker-projects"></div>
-      <div class="picker-search">
-        <span class="icon">🔍</span>
-        <input type="text" id="picker-filter" placeholder="Filter sessions by preview…" />
-        <button class="picker-refresh" id="picker-refresh" type="button" title="Refresh session list">🔄</button>
-      </div>
-      <div class="picker-list" id="picker-list"></div>
-    </div>
+<aside class="rail" id="rail" data-collapsed="false">
+  <div class="rail-head">
+    <button class="rail-toggle" id="rail-toggle" type="button" title="Collapse / expand sidebar">☰</button>
+    <span class="rail-brand">claude-atlas</span>
   </div>
-  <span class="counter" id="count">0</span>
-  <button class="toggle active" id="toggle-thinking">💭 thinking</button>
-  <button class="toggle" id="toggle-tools">🔧 tools</button>
+  <nav class="rail-nav">
+    <button class="rail-section-btn" data-section="sessions" title="Sessions">
+      <span class="rail-ico">🗂️</span><span class="rail-text">Sessions</span><span class="rail-count" id="rail-sessions-count">·</span>
+    </button>
+    <button class="rail-section-btn" data-section="search" title="Search across sessions">
+      <span class="rail-ico">🔎</span><span class="rail-text">Search</span>
+    </button>
+    <button class="rail-section-btn" data-section="pending" title="Pending annotations (this session)">
+      <span class="rail-ico">📌</span><span class="rail-text">Pending</span><span class="rail-count" id="rail-pending-count">0</span>
+    </button>
+    <button class="rail-section-btn" data-section="sent" title="Sent annotations + replies">
+      <span class="rail-ico">📨</span><span class="rail-text">Sent</span><span class="rail-count" id="rail-sent-count">·</span>
+    </button>
+  </nav>
+  <div class="rail-body">
+    <section class="rail-pane" data-pane="sessions">
+      <div class="rail-pane-head">
+        <div class="rail-search-row">
+          <input type="text" id="rail-filter" placeholder="Filter…" />
+          <select id="rail-project-select" title="Filter by project"></select>
+          <button id="rail-refresh" type="button" title="Refresh">🔄</button>
+          <button id="rail-ai-batch" type="button" title="Generate AI titles for all auto-extracted sessions (one-time, persisted)">✨</button>
+        </div>
+        <div class="rail-ai-progress" id="rail-ai-progress" hidden></div>
+      </div>
+      <div class="rail-list" id="rail-sessions-list"></div>
+    </section>
+    <section class="rail-pane" data-pane="search" hidden>
+      <div class="rail-pane-head">
+        <input type="text" id="rail-search-input" placeholder="Search across all sessions…" />
+      </div>
+      <div class="rail-list" id="rail-search-results">
+        <div class="rail-empty">Type at least 2 characters to search</div>
+      </div>
+    </section>
+    <section class="rail-pane" data-pane="pending" hidden>
+      <div class="rail-pane-head">
+        <button class="rail-send" id="rail-send-btn" type="button" disabled>Send to Claude</button>
+        <button class="rail-clear" id="rail-clear-btn" type="button" title="Clear all pending">Clear</button>
+      </div>
+      <div class="rail-list" id="rail-pending-list">
+        <div class="rail-empty">Select text in a message and press <kbd>C</kbd> to annotate.</div>
+      </div>
+    </section>
+    <section class="rail-pane" data-pane="sent" hidden>
+      <div class="rail-pane-head">
+        <button id="rail-sent-refresh" type="button" title="Refresh">🔄</button>
+        <span class="rail-hint">Sent annotations · replies via <code>/rano</code></span>
+      </div>
+      <div class="rail-list" id="rail-sent-list">
+        <div class="rail-empty">Open this tab to load sent annotations…</div>
+      </div>
+    </section>
+  </div>
+  <div class="rail-resizer" id="rail-resizer" title="Drag to resize · double-click to reset"></div>
+</aside>
+<header>
+  <div class="session-crumb" id="session-crumb">
+    <span class="crumb-project" id="crumb-project"></span>
+    <span class="crumb-sep">·</span>
+    <span class="crumb-title" id="crumb-title">Loading…</span>
+  </div>
+  <div class="header-spacer"></div>
+  <span class="counter" id="count" title="Messages in this session">0</span>
+  <button class="toggle active" id="toggle-thinking" title="Show / hide thinking blocks">💭 thinking</button>
+  <button class="toggle" id="toggle-tools" title="Show / hide tool calls">🔧 tools</button>
+  <button class="toggle" id="fold-all-btn" title="Collapse / expand all messages">📦 fold</button>
   <div class="token-wrap">
-    <button class="toggle" id="toggle-tokens" title="Show token usage breakdown">📊 tokens</button>
+    <button class="toggle" id="toggle-tokens" title="Token usage breakdown">📊 tokens</button>
     <div class="token-popover" id="token-popover"></div>
   </div>
-  <button class="toggle" id="fold-all-btn" title="Collapse / expand all messages">📦 fold</button>
-  <button class="toggle" id="search-btn" title="Search across all sessions (⌘K)">🔎 search</button>
   <span class="live" id="live"><span class="dot"></span>live</span>
+  <!-- Hidden compat shims: rail replaces these, but legacy JS still reads/writes them. -->
+  <span id="picker-label" hidden></span>
+  <button id="picker-btn" type="button" hidden></button>
+  <div id="picker-menu" hidden>
+    <div id="picker-projects"></div>
+    <input type="text" id="picker-filter" hidden />
+    <button id="picker-refresh" type="button" hidden></button>
+    <div id="picker-list"></div>
+  </div>
+  <button id="search-btn" type="button" hidden></button>
 </header>
 <main id="messages">
   <div class="empty">Loading…</div>
@@ -1291,6 +1713,106 @@
 
   // ---- State -----------------------------------------------------------
   const messagesEl = document.getElementById("messages");
+
+  // ---- Left rail (nav) -------------------------------------------------
+  const rail = document.getElementById("rail");
+  const railToggle = document.getElementById("rail-toggle");
+  const railSessionsList = document.getElementById("rail-sessions-list");
+  const railSessionsCount = document.getElementById("rail-sessions-count");
+  const railProjects = document.getElementById("rail-projects");
+  const railFilter = document.getElementById("rail-filter");
+  const railRefresh = document.getElementById("rail-refresh");
+  const railSearchInput = document.getElementById("rail-search-input");
+  const railSearchResults = document.getElementById("rail-search-results");
+  const railPendingList = document.getElementById("rail-pending-list");
+  const railPendingCount = document.getElementById("rail-pending-count");
+  const railSentList = document.getElementById("rail-sent-list");
+  const railSentCount = document.getElementById("rail-sent-count");
+  const railSendBtn = document.getElementById("rail-send-btn");
+  const railClearBtn = document.getElementById("rail-clear-btn");
+  const railSentRefresh = document.getElementById("rail-sent-refresh");
+  const RAIL_COLLAPSED_KEY = "viewer:railCollapsed";
+  const RAIL_SECTION_KEY = "viewer:railSection";
+  let railActiveSection = localStorage.getItem(RAIL_SECTION_KEY) || "sessions";
+  if (localStorage.getItem(RAIL_COLLAPSED_KEY) === "1") {
+    document.body.classList.add("rail-collapsed");
+  }
+  function setRailSection(name) {
+    railActiveSection = name;
+    localStorage.setItem(RAIL_SECTION_KEY, name);
+    document.querySelectorAll(".rail-section-btn").forEach(b => {
+      b.classList.toggle("active", b.dataset.section === name);
+    });
+    document.querySelectorAll(".rail-pane").forEach(p => {
+      p.hidden = (p.dataset.pane !== name);
+    });
+    // If collapsed, expand the rail when a section is clicked.
+    if (document.body.classList.contains("rail-collapsed")) {
+      document.body.classList.remove("rail-collapsed");
+      localStorage.setItem(RAIL_COLLAPSED_KEY, "0");
+    }
+    if (name === "sent") loadSentAnnotations();
+    if (name === "pending") renderRailPending();
+    if (name === "sessions") renderRailSessions();
+  }
+  document.querySelectorAll(".rail-section-btn").forEach(btn => {
+    btn.addEventListener("click", () => setRailSection(btn.dataset.section));
+  });
+  railToggle.addEventListener("click", () => {
+    const collapsed = document.body.classList.toggle("rail-collapsed");
+    localStorage.setItem(RAIL_COLLAPSED_KEY, collapsed ? "1" : "0");
+  });
+
+  // ---- Rail resize: drag the right-edge handle to change rail width ----
+  const RAIL_WIDTH_KEY = "viewer:railWidth";
+  const RAIL_DEFAULT_W = 300;
+  const RAIL_MIN_W = 200;
+  const RAIL_MAX_W = 600;
+  const railResizer = document.getElementById("rail-resizer");
+  function applyRailWidth(w) {
+    const clamped = Math.max(RAIL_MIN_W, Math.min(RAIL_MAX_W, w));
+    document.body.style.setProperty("--rail-w", clamped + "px");
+  }
+  const savedRailWidth = parseInt(localStorage.getItem(RAIL_WIDTH_KEY) || "", 10);
+  if (savedRailWidth) applyRailWidth(savedRailWidth);
+  if (railResizer) {
+    let startX = 0, startW = 0;
+    const onMove = (e) => {
+      const w = startW + (e.clientX - startX);
+      applyRailWidth(w);
+    };
+    const onUp = () => {
+      document.body.classList.remove("rail-resizing");
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      // Persist the final width.
+      const cur = parseInt(getComputedStyle(document.body).getPropertyValue("--rail-w"), 10);
+      if (cur) localStorage.setItem(RAIL_WIDTH_KEY, String(cur));
+    };
+    railResizer.addEventListener("mousedown", (e) => {
+      if (document.body.classList.contains("rail-collapsed")) return;
+      e.preventDefault();
+      startX = e.clientX;
+      startW = parseInt(getComputedStyle(document.body).getPropertyValue("--rail-w"), 10) || RAIL_DEFAULT_W;
+      document.body.classList.add("rail-resizing");
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    });
+    railResizer.addEventListener("dblclick", () => {
+      applyRailWidth(RAIL_DEFAULT_W);
+      localStorage.setItem(RAIL_WIDTH_KEY, String(RAIL_DEFAULT_W));
+    });
+  }
+  // Initial render is deferred to after the rest of the script (and the
+  // helpers it depends on like renderPicker / renderRailPending) have all
+  // been declared. We just paint the active pill state here.
+  document.querySelectorAll(".rail-section-btn").forEach(b => {
+    b.classList.toggle("active", b.dataset.section === railActiveSection);
+  });
+  document.querySelectorAll(".rail-pane").forEach(p => {
+    p.hidden = (p.dataset.pane !== railActiveSection);
+  });
+
   const pickerBtn = document.getElementById("picker-btn");
   const pickerLabel = document.getElementById("picker-label");
   const pickerMenu = document.getElementById("picker-menu");
@@ -1338,7 +1860,10 @@
   let es = null;
 
   const params = new URLSearchParams(location.search);
-  const urlSession = params.get("session");
+  // Accept both ?session= and ?cc_session= so the /atlas slash command
+  // (which uses the cc_session semantic for agentation parity) lands on the
+  // right session instead of falling back to the last-viewed one.
+  const urlSession = params.get("session") || params.get("cc_session");
 
   // ---- LocalStorage helpers --------------------------------------------
   const ANNO_KEY = (sid) => `viewer:annotations:${sid}`;
@@ -1346,7 +1871,23 @@
 
   function loadAnnotations(sid) {
     if (!sid) return [];
-    try { return JSON.parse(localStorage.getItem(ANNO_KEY(sid)) || "[]"); }
+    try {
+      const raw = JSON.parse(localStorage.getItem(ANNO_KEY(sid)) || "[]");
+      // Dedup: same {msgIdx, quote, comment} only ever counts once.
+      const seen = new Set();
+      const deduped = [];
+      for (const a of raw) {
+        const key = `${a.msgIdx}|${a.quote}|${a.comment}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        deduped.push(a);
+      }
+      if (deduped.length !== raw.length) {
+        // Persist the cleaned version so future loads are already deduped.
+        try { localStorage.setItem(ANNO_KEY(sid), JSON.stringify(deduped)); } catch {}
+      }
+      return deduped;
+    }
     catch { return []; }
   }
   function saveAnnotations(sid, list) {
@@ -1463,12 +2004,53 @@
   const PROJECT_FILTER_KEY = "viewer:projectFilter";
   let projectFilter = localStorage.getItem(PROJECT_FILTER_KEY) || ""; // "" = All
 
+  // Claude Code replaces BOTH `/` and `_` with `-` in project dir names,
+  // so the disk name alone can't disambiguate `work_dupe` from `work-dupe`.
+  // We rebuild a project → real cwd map from each session's JSONL `cwd`
+  // and prefer that over the lossy dir name when rendering pretty labels.
+  const projectCwdMap = new Map();
+  function refreshProjectCwdMap() {
+    projectCwdMap.clear();
+    for (const s of allSessions) {
+      if (s.cwd && s.project && !projectCwdMap.has(s.project)) {
+        projectCwdMap.set(s.project, s.cwd);
+      }
+    }
+  }
+  function getHomePrefix() {
+    for (const s of allSessions) {
+      const c = s && s.cwd;
+      if (!c) continue;
+      const parts = c.split("/");
+      if (parts[1] === "Users" && parts[2]) return "/Users/" + parts[2];
+      if (parts[1] === "home"  && parts[2]) return "/home/"  + parts[2];
+    }
+    return null;
+  }
   function prettyProject(p) {
-    // -Users-ishaangarg-work-prophecy-orchestrate → prophecy-orchestrate
-    // -Users-ishaangarg--claude → .claude
     if (!p) return "(unknown)";
-    if (p === "-Users-ishaangarg--claude") return ".claude";
-    return p.replace(/^-Users-ishaangarg-?/, "").replace(/-/g, "/").replace(/^\//, "") || p;
+    const cwd = projectCwdMap.get(p);
+    if (cwd) {
+      const home = getHomePrefix() || "";
+      if (cwd === home) return "~";
+      if (cwd.startsWith(home + "/")) return cwd.slice(home.length + 1);
+      return cwd;
+    }
+    const homeUser = (() => {
+      for (const s of allSessions) {
+        if (!s.cwd) continue;
+        const m = s.cwd.match(/^\/(?:Users|home)\/([^\/]+)/);
+        if (m) return m[1];
+      }
+      return null;
+    })();
+    if (homeUser) {
+      const dirPrefix = "-Users-" + homeUser + "-";
+      if (p === dirPrefix.slice(0, -1) + "--claude") return ".claude";
+      if (p === dirPrefix.slice(0, -1)) return "~";
+      return p.replace(new RegExp("^" + dirPrefix + "?"), "").replace(/-/g, "/").replace(/^\//, "") || p;
+    }
+    return p.replace(/^-(?:Users|home)-[^-]+-?/, "").replace(/-/g, "/").replace(/^\//, "") || p;
   }
 
   async function loadSessions() {
@@ -1476,7 +2058,9 @@
       const r = await fetch("/sessions");
       const data = await r.json();
       allSessions = data.sessions || [];
+      refreshProjectCwdMap();
       renderPicker();
+      syncTabTitle();
       return allSessions;
     } catch { return []; }
   }
@@ -1528,39 +2112,289 @@
       ? byProject.filter(s => (s.preview || "").toLowerCase().includes(q) || s.id.includes(q))
       : byProject;
 
-    // Group by recency
+    // Pin the active session at the top so it's always one click away,
+    // regardless of how recently it was updated.
+    const activeIdx = currentSessionId
+      ? filtered.findIndex(s => s.id === currentSessionId)
+      : -1;
+    const pinned = activeIdx >= 0 ? filtered[activeIdx] : null;
+    const rest = pinned
+      ? filtered.slice(0, activeIdx).concat(filtered.slice(activeIdx + 1))
+      : filtered;
+
+    // Group remainder by recency
     const groups = new Map();
-    for (const s of filtered) {
+    for (const s of rest) {
       const b = bucket(s.mtime, now);
       if (!groups.has(b)) groups.set(b, []);
       groups.get(b).push(s);
     }
 
-    pickerList.innerHTML = "";
-    if (filtered.length === 0) {
-      pickerList.innerHTML = `<div class="picker-empty">No sessions match "${escapeHtml(q)}"</div>`;
-    } else {
+    // Renders the same grouped session list into a target container.
+    function paintInto(target) {
+      target.innerHTML = "";
+      if (filtered.length === 0) {
+        target.innerHTML = `<div class="picker-empty">No sessions match "${escapeHtml(q)}"</div>`;
+        return;
+      }
+      if (pinned) {
+        const head = document.createElement("div");
+        head.className = "picker-group-head pinned";
+        head.textContent = "CURRENT · pinned";
+        target.appendChild(head);
+        target.appendChild(renderSessionCard(pinned, now));
+      }
       for (const [groupName, items] of groups) {
         const head = document.createElement("div");
         head.className = "picker-group-head";
         head.textContent = `${groupName} · ${items.length}`;
-        pickerList.appendChild(head);
-        for (const s of items) {
-          pickerList.appendChild(renderSessionCard(s, now));
-        }
+        target.appendChild(head);
+        for (const s of items) target.appendChild(renderSessionCard(s, now));
       }
     }
+    paintInto(pickerList);
+    paintInto(railSessionsList);
+    if (railSessionsCount) railSessionsCount.textContent = String(allSessions.length);
+    renderRailProjectChips();
 
-    // Update the button label
+    // Update the legacy (hidden) picker button label AND the visible header
+    // crumb that replaced it.
     const active = allSessions.find(s => s.id === currentSessionId);
+    const crumbProject = document.getElementById("crumb-project");
+    const crumbTitle = document.getElementById("crumb-title");
     if (active) {
-      pickerLabel.textContent = active.preview
-        ? active.preview.slice(0, 48)
-        : `${active.id.slice(0, 8)}…`;
+      const lbl = active.preview ? active.preview : `${active.id.slice(0, 8)}…`;
+      pickerLabel.textContent = lbl.slice(0, 48);
+      if (crumbProject) crumbProject.textContent = prettyProject(active.project);
+      if (crumbTitle) {
+        crumbTitle.textContent = lbl;
+        crumbTitle.title = `${active.id}\n${active.project}`;
+      }
     } else if (currentSessionId) {
       pickerLabel.textContent = `${currentSessionId.slice(0, 8)}…`;
+      if (crumbTitle) crumbTitle.textContent = `${currentSessionId.slice(0, 8)}…`;
     } else {
       pickerLabel.textContent = "Pick a session";
+      if (crumbTitle) crumbTitle.textContent = "No session";
+    }
+  }
+
+  function renderRailSessions() { renderPicker(); }
+
+  function renderRailProjectChips() {
+    const sel = document.getElementById("rail-project-select");
+    if (!sel) return;
+    const projects = new Map();
+    for (const s of allSessions) {
+      const p = s.project || "(unknown)";
+      projects.set(p, (projects.get(p) || 0) + 1);
+    }
+    const sorted = [...projects.entries()].sort((a, b) => b[1] - a[1]);
+    const prev = sel.value;
+    sel.innerHTML = "";
+    const allOpt = document.createElement("option");
+    allOpt.value = "";
+    allOpt.textContent = `All projects · ${allSessions.length}`;
+    sel.appendChild(allOpt);
+    for (const [proj, count] of sorted) {
+      const opt = document.createElement("option");
+      opt.value = proj;
+      opt.textContent = `${prettyProject(proj)} · ${count}`;
+      opt.title = proj;
+      sel.appendChild(opt);
+    }
+    sel.value = projectFilter || prev || "";
+    if (!sel.dataset.wired) {
+      sel.dataset.wired = "1";
+      sel.addEventListener("change", () => {
+        projectFilter = sel.value;
+        localStorage.setItem(PROJECT_FILTER_KEY, projectFilter);
+        renderPicker();
+      });
+    }
+  }
+
+  // Mirror the rail filter into the same filterText state the dropdown uses.
+  if (railFilter) {
+    railFilter.addEventListener("input", () => {
+      filterText = railFilter.value;
+      renderPicker();
+    });
+  }
+  if (railRefresh) {
+    railRefresh.addEventListener("click", async () => {
+      railRefresh.disabled = true;
+      try { await loadSessions(); } finally { railRefresh.disabled = false; }
+    });
+  }
+
+  // ---- Rail pending annotations -----------------------------------------
+  function renderRailPending() {
+    if (!railPendingList) return;
+    railPendingCount.textContent = String(annotations.length);
+    railSendBtn.disabled = annotations.length === 0;
+    if (annotations.length === 0) {
+      railPendingList.innerHTML = `<div class="rail-empty">Select text in a message and press <kbd>C</kbd> to annotate.</div>`;
+      return;
+    }
+    railPendingList.innerHTML = "";
+    annotations.forEach((a, i) => {
+      a = enrichAnnotationContext(a);
+      const card = document.createElement("div");
+      card.className = "anno-card";
+      card.dataset.annoKey = annoKey(a);
+      const beforeTxt = (a.prefix || "").slice(-220);
+      const afterTxt = (a.suffix || "").slice(0, 220);
+      const quoteTxt = (a.quote || "").length > 240
+        ? a.quote.slice(0, 240) + "…"
+        : (a.quote || "");
+      card.innerHTML = `
+        <div class="quote-block">${
+          beforeTxt ? `<span class="ctx before">…${escapeHtml(beforeTxt)}</span>` : ""
+        }<span class="quote-mark">${escapeHtml(quoteTxt)}</span>${
+          afterTxt ? `<span class="ctx after">${escapeHtml(afterTxt)}…</span>` : ""
+        }</div>
+        <div class="comment">${escapeHtml(a.comment)}</div>
+        <div class="jump-hint">Click to jump to message #${a.msgIdx} ↗</div>
+        <div class="actions"><button data-i="${i}" data-act="del">Delete</button></div>`;
+      card.addEventListener("click", (e) => {
+        // Delete button has its own handler — don't jump when removing.
+        if (e.target.closest("[data-act='del']")) return;
+        jumpToAnnotation(a);
+      });
+      railPendingList.appendChild(card);
+    });
+    railPendingList.querySelectorAll("[data-act='del']").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const i = Number(btn.dataset.i);
+        annotations.splice(i, 1);
+        saveAnnotations(currentSessionId, annotations);
+        refreshDock();
+        renderMessages();
+      });
+    });
+  }
+  if (railSendBtn) railSendBtn.addEventListener("click", () => sendToAgentation());
+  if (railClearBtn) railClearBtn.addEventListener("click", () => {
+    if (annotations.length === 0) return;
+    if (!confirm(`Clear ${annotations.length} annotation(s)?`)) return;
+    annotations = [];
+    saveAnnotations(currentSessionId, annotations);
+    refreshDock();
+    renderMessages();
+  });
+  if (railSentRefresh) railSentRefresh.addEventListener("click", () => loadSentAnnotations());
+
+  // ---- Rail AI batch headline regeneration -----------------------------
+  const railAiBatch = document.getElementById("rail-ai-batch");
+  const railAiProgress = document.getElementById("rail-ai-progress");
+  if (railAiBatch) {
+    railAiBatch.addEventListener("click", async () => {
+      const autoCount = allSessions.filter(s => s.headlineSource === "auto").length;
+      if (autoCount === 0) {
+        showToast("No auto-extracted headlines to regenerate");
+        return;
+      }
+      if (!confirm(`Generate AI titles for ${autoCount} session(s)?\nUses Claude haiku via your local CLI. Sequential, ~2s each.`)) return;
+      railAiBatch.disabled = true;
+      railAiProgress.hidden = false;
+      railAiProgress.textContent = `Starting…`;
+      try {
+        const r = await fetch("/headlines/llm/batch?filter=auto", { method: "POST" });
+        if (!r.body) throw new Error("no stream");
+        const reader = r.body.getReader();
+        const dec = new TextDecoder();
+        let buf = "";
+        let lastEvent = "";
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          const events = buf.split(/\n\n/);
+          buf = events.pop() || "";
+          for (const ev of events) {
+            const lines = ev.split("\n");
+            let evName = "", data = "";
+            for (const l of lines) {
+              if (l.startsWith("event: ")) evName = l.slice(7);
+              else if (l.startsWith("data: ")) data = l.slice(6);
+            }
+            if (!data) continue;
+            let payload; try { payload = JSON.parse(data); } catch { continue; }
+            lastEvent = evName;
+            if (evName === "start") {
+              railAiProgress.textContent = `Generating 0 / ${payload.total}…`;
+            } else if (evName === "progress") {
+              if (payload.status === "done" && payload.headline) {
+                railAiProgress.textContent = `${payload.done} / ${payload.total} · ${payload.headline.slice(0, 50)}`;
+                await loadSessions();
+              } else if (payload.status === "error") {
+                railAiProgress.textContent = `${payload.done} / ${payload.total} · failed: ${payload.error?.slice(0, 60)}`;
+              } else {
+                railAiProgress.textContent = `${payload.done} / ${payload.total} · ${payload.status}…`;
+              }
+            } else if (evName === "complete") {
+              railAiProgress.textContent = `Done · ${payload.succeeded} succeeded, ${payload.failed} failed`;
+              await loadSessions();
+              setTimeout(() => { railAiProgress.hidden = true; }, 4000);
+            }
+          }
+        }
+      } catch (err) {
+        railAiProgress.textContent = `Error: ${err.message}`;
+        showToast(`Batch failed: ${err.message}`, true);
+      } finally {
+        railAiBatch.disabled = false;
+      }
+    });
+  }
+
+  // ---- Rail search -------------------------------------------------------
+  let railSearchTimer = null;
+  if (railSearchInput) {
+    railSearchInput.addEventListener("input", () => {
+      const q = railSearchInput.value.trim();
+      clearTimeout(railSearchTimer);
+      if (q.length < 2) {
+        railSearchResults.innerHTML = `<div class="rail-empty">Type at least 2 characters to search</div>`;
+        return;
+      }
+      railSearchTimer = setTimeout(async () => {
+        railSearchResults.innerHTML = `<div class="rail-empty">Searching…</div>`;
+        try {
+          const r = await fetch(`/search?q=${encodeURIComponent(q)}&limit=50`);
+          const data = await r.json();
+          renderRailSearchResults(data.matches || [], q);
+        } catch (err) {
+          railSearchResults.innerHTML = `<div class="rail-empty">Search failed: ${escapeHtml(err.message)}</div>`;
+        }
+      }, 200);
+    });
+  }
+  function renderRailSearchResults(matches, q) {
+    if (!matches.length) {
+      railSearchResults.innerHTML = `<div class="rail-empty">No matches for "${escapeHtml(q)}"</div>`;
+      return;
+    }
+    railSearchResults.innerHTML = "";
+    for (const m of matches) {
+      const card = document.createElement("a");
+      card.className = "picker-item";
+      card.href = `/?session=${encodeURIComponent(m.sessionId)}&msg=${m.msgIdx}`;
+      card.innerHTML = `
+        <div class="preview">${escapeHtml(m.preview || m.sessionId.slice(0, 8))}</div>
+        <div style="font-size:11.5px;color:var(--muted);margin-top:2px">${escapeHtml(m.snippet)}</div>
+        <div class="pills-row"><div class="pills">
+          <span class="pill msgs">${escapeHtml(m.role)}</span>
+          <span class="pill updated">msg #${m.msgIdx}</span>
+        </div></div>`;
+      card.addEventListener("click", (e) => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+        e.preventDefault();
+        setActiveSession(m.sessionId).then(() => jumpToMessage(m.msgIdx));
+      });
+      railSearchResults.appendChild(card);
     }
   }
 
@@ -1586,17 +2420,27 @@
     const resumeCmd = cwdEsc
       ? `cd "${cwdEsc}" && claude --resume ${s.id}`
       : `claude --resume ${s.id}`;
+    const isUserNamed = s.headlineSource === "user";
+    const editIcon = isUserNamed ? "📝" : "✏️";
+    const editTitle = isUserNamed
+      ? "Edit headline (clear to reset to auto-extracted)"
+      : "Set a custom headline for this session";
+    const aiTitle = "Generate a topic title with AI (Claude haiku)";
     btn.innerHTML = `
       <div class="preview">${escapeHtml(preview)}</div>
       <div class="pills-row">
         <div class="pills">${pills.join("")}</div>
+        <button class="ai-btn" type="button" title="${escapeHtml(aiTitle)}">✨</button>
+        <button class="rename-btn" type="button" title="${escapeHtml(editTitle)}">${editIcon}</button>
         <button class="resume-btn" type="button" data-cmd="${escapeHtml(resumeCmd)}" title="Copy 'claude --resume' command for terminal · paste in your shell to resume this session">📋</button>
       </div>
     `;
     btn.addEventListener("click", (e) => {
-      // The resume button has its own handler — don't activate the session if
-      // they click it.
-      if (e.target.closest(".resume-btn")) return;
+      // The resume / rename / AI buttons have their own handlers — don't
+      // activate the session if they click them.
+      if (e.target.closest(".resume-btn") ||
+          e.target.closest(".rename-btn") ||
+          e.target.closest(".ai-btn")) return;
       // Let the browser handle modifier-clicks and middle-click — they should
       // open the link in a new tab/window/background tab natively.
       if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
@@ -1620,6 +2464,68 @@
       } catch (err) {
         resumeBtn.textContent = "✗";
         setTimeout(() => { resumeBtn.textContent = "📋"; }, 1500);
+      }
+    });
+    // Rename: prompt with current headline pre-filled. Empty value = reset to
+    // auto-extract. Non-empty value = persist as user-set headline.
+    const renameBtn = btn.querySelector(".rename-btn");
+    renameBtn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const current = s.preview || "";
+      const input = window.prompt(
+        "Headline for this session (clear and press OK to reset to auto-extracted):",
+        current,
+      );
+      if (input === null) return; // cancelled
+      const trimmed = input.trim();
+      try {
+        if (!trimmed) {
+          await fetch(`/headlines?id=${encodeURIComponent(s.id)}`, { method: "DELETE" });
+          showToast("Headline reset to auto");
+        } else {
+          await fetch("/headlines", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: s.id, headline: trimmed }),
+          });
+          showToast("Headline saved ✓");
+        }
+        await loadSessions();
+        renderPicker();
+      } catch (err) {
+        showToast("Failed to update headline", true);
+      }
+    });
+    // AI title: POST to /headlines/llm; small spinner during the call.
+    const aiBtn = btn.querySelector(".ai-btn");
+    aiBtn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (aiBtn.dataset.busy === "1") return;
+      aiBtn.dataset.busy = "1";
+      const original = aiBtn.textContent;
+      aiBtn.textContent = "⏳";
+      try {
+        const r = await fetch("/headlines/llm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: s.id }),
+        });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+        if (data.skipped) {
+          showToast(`Kept existing ${data.source} title (outranks AI)`);
+        } else {
+          showToast(`AI title: ${data.headline}`);
+        }
+        await loadSessions();
+        renderPicker();
+      } catch (err) {
+        showToast(`AI rename failed: ${err.message}`, true);
+      } finally {
+        aiBtn.dataset.busy = "0";
+        aiBtn.textContent = original;
       }
     });
     // Middle-click also opens in new tab natively — no handler needed; the
@@ -1817,6 +2723,34 @@
     el.classList.add("flash");
   }
 
+  // WhatsApp-style: clicking an annotation card scrolls the transcript to the
+  // exact highlighted span and pulses it for a moment. If the message is in
+  // a paginated-away region, expand pagination far enough to include it first.
+  function jumpToAnnotation(a) {
+    if (!a) return;
+    const ensureMessageRendered = () => {
+      const have = messagesEl.querySelector(`.msg[data-idx="${a.msgIdx}"]`);
+      if (have) return Promise.resolve();
+      // Load enough earlier messages to include the target.
+      const total = lastMessages.length;
+      if (a.msgIdx < 0 || a.msgIdx >= total) return Promise.resolve();
+      displayCount = Math.max(displayCount, total - a.msgIdx);
+      stickyBottom = false;
+      return renderMessages();
+    };
+    ensureMessageRendered().then(() => {
+      const key = annoKey(a);
+      const mark = messagesEl.querySelector(`mark.anno[data-anno-key="${CSS.escape(key)}"]`);
+      const target = mark || messagesEl.querySelector(`.msg[data-idx="${a.msgIdx}"]`);
+      if (!target) return;
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      target.classList.remove("anno-pulse", "flash");
+      void target.offsetWidth;
+      target.classList.add(mark ? "anno-pulse" : "flash");
+      setTimeout(() => target.classList.remove("anno-pulse"), 1800);
+    });
+  }
+
   function pickInitialSession(sessions) {
     if (urlSession && sessions.some(s => s.id === urlSession)) return urlSession;
     const last = localStorage.getItem(LAST_SESSION_KEY);
@@ -1838,8 +2772,17 @@
     stickyBottom = true;
     refreshDock();
     renderPicker();
+    syncTabTitle();
     await loadTranscript();
     startSSE();
+  }
+
+  // Keep the browser tab label in sync with the active session's headline.
+  // Falls back to the generic Atlas title when no session is selected.
+  function syncTabTitle() {
+    const active = allSessions.find(s => s.id === currentSessionId);
+    const head = (active && active.preview) ? active.preview : null;
+    document.title = head ? `${head} — Atlas` : "Atlas · Claude sessions";
   }
 
   // ---- Transcript ------------------------------------------------------
@@ -2418,16 +3361,28 @@
 
   function addCopyButtons() {
     // Block code: copy button (visible on hover)
+    // Wrap the <pre> in a non-scrolling .code-block so the label/button
+    // can be absolute-positioned against the wrapper and stay glued to the
+    // visible right edge — independent of how far the <pre> is scrolled.
     document.querySelectorAll(".md pre").forEach(pre => {
-      if (pre.querySelector(".copy-btn")) return;
+      const alreadyWrapped = pre.parentElement && pre.parentElement.classList.contains("code-block");
+      const host = alreadyWrapped ? pre.parentElement : null;
+      if (host && host.querySelector(":scope > .copy-btn")) return;
       const code = pre.querySelector("code");
       if (!code) return;
+      let wrapper = host;
+      if (!wrapper) {
+        wrapper = document.createElement("div");
+        wrapper.className = "code-block";
+        pre.parentNode.insertBefore(wrapper, pre);
+        wrapper.appendChild(pre);
+      }
       const lang = (code.className.match(/language-([\w-]+)/) || [])[1];
-      if (lang) {
+      if (lang && !wrapper.querySelector(":scope > .lang-label")) {
         const label = document.createElement("span");
         label.className = "lang-label";
         label.textContent = lang;
-        pre.appendChild(label);
+        wrapper.appendChild(label);
       }
       const btn = document.createElement("button");
       btn.className = "copy-btn";
@@ -2439,7 +3394,7 @@
           setTimeout(() => { btn.classList.remove("copied"); btn.textContent = "Copy"; }, 1500);
         }).catch(() => { btn.textContent = "✗"; setTimeout(() => { btn.textContent = "Copy"; }, 1500); });
       });
-      pre.appendChild(btn);
+      wrapper.appendChild(btn);
     });
 
     // Inline code: click-to-copy
@@ -2476,10 +3431,29 @@
     return null;
   }
 
-  function getContextWindow(text, idx, len, win = 40) {
+  // 240 chars on each side captures a sentence or two — enough to remember
+  // why you annotated. The display layer truncates further if needed.
+  function getContextWindow(text, idx, len, win = 240) {
     const start = Math.max(0, idx - win);
     const end = Math.min(text.length, idx + len + win);
     return { prefix: text.slice(start, idx), suffix: text.slice(idx + len, end) };
+  }
+
+  // For annotations stored before the wider window existed, re-derive prefix
+  // and suffix from the rendered message DOM whenever it's available. This
+  // upgrades old localStorage entries in-place so users see real context.
+  function enrichAnnotationContext(a) {
+    if (!a || !a.quote) return a;
+    if ((a.prefix || "").length >= 80 && (a.suffix || "").length >= 80) return a;
+    try {
+      const msgEl = messagesEl.querySelector(`.msg[data-idx="${a.msgIdx}"]`);
+      if (!msgEl) return a;
+      const fullText = msgEl.innerText;
+      const idx = fullText.indexOf(a.quote);
+      if (idx === -1) return a;
+      const c = getContextWindow(fullText, idx, a.quote.length);
+      return { ...a, prefix: c.prefix, suffix: c.suffix };
+    } catch { return a; }
   }
 
   function buildAnnotationFromSelection(selection) {
@@ -2515,7 +3489,7 @@
     popup.innerHTML = `
       <div class="quote">${escapeHtml(anno.quote.slice(0, 240))}</div>
       <div class="preset-row">${presetHtml}</div>
-      <textarea placeholder="…or type a custom comment (⌘+Enter to add)" autofocus></textarea>
+      <textarea placeholder="…or type a custom comment (Enter to add · Shift+Enter for newline)" autofocus></textarea>
       <div class="row">
         <button data-act="cancel">Cancel</button>
         <button class="primary" data-act="add">Add</button>
@@ -2548,17 +3522,34 @@
     popup.querySelector("[data-act='cancel']").addEventListener("click", closePopup);
     popup.querySelector("[data-act='add']").addEventListener("click", () => commit(ta.value));
 
+    let committed = false;
     const onKey = (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-        e.preventDefault(); commit(ta.value);
+      // Guard against double-fire: keydown bubbles from <textarea> up to the
+      // popup container, and we used to attach the listener to both, so each
+      // Enter press inserted the annotation twice. Single attach + a
+      // committed flag is enough; e.stopPropagation kills lingering bubbles.
+      if (committed) return;
+      if (e.key === "Enter" && !e.shiftKey && !e.altKey) {
+        // Plain Enter or ⌘/Ctrl+Enter → submit. Shift+Enter falls through to
+        // the textarea's default behavior (insert newline).
+        e.preventDefault();
+        e.stopPropagation();
+        committed = true;
+        commit(ta.value);
       } else if ((e.metaKey || e.ctrlKey) && /^[1-4]$/.test(e.key)) {
         const preset = PRESETS.find(p => p.key === e.key);
-        if (preset) { e.preventDefault(); commit(preset.label); }
+        if (preset) {
+          e.preventDefault();
+          e.stopPropagation();
+          committed = true;
+          commit(preset.label);
+        }
       } else if (e.key === "Escape") {
         closePopup();
       }
     };
-    ta.addEventListener("keydown", onKey);
+    // Attach once on the popup root — keydown bubbles up from the textarea
+    // naturally; binding to both was the source of the double-add bug.
     popup.addEventListener("keydown", onKey);
   }
 
@@ -2567,24 +3558,114 @@
     popup = null;
   }
 
-  document.addEventListener("mouseup", (e) => {
-    if (popup && popup.contains(e.target)) return;
-    setTimeout(() => {
-      const sel = window.getSelection();
-      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) { closePopup(); return; }
-      const anno = buildAnnotationFromSelection(sel);
-      if (!anno) return;
-      showPopup(anno);
-    }, 0);
+  // Annotation popup is now gated on pressing C after selecting — selecting
+  // text alone never interrupts reading. Mouseup just caches whether a valid
+  // selection exists; the C key actually opens the popup.
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { closePopup(); return; }
+    if (popup) return; // a popup is already open; ignore further C presses
+    if (e.key !== "c" && e.key !== "C") return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return; // let ⌘C / ctrl+C work
+    // Don't hijack the key while the user is typing in an input/textarea.
+    const t = e.target;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+    const anno = buildAnnotationFromSelection(sel);
+    if (!anno) return;
+    e.preventDefault();
+    showPopup(anno);
   });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closePopup(); });
 
   // ---- Annotation highlights -------------------------------------------
+  // Stable identity key per annotation. Used to (a) deduplicate, (b) link the
+  // dock card → the <mark.anno> span in the transcript for jump-to-annotation.
+  function annoKey(a) {
+    return `${a.msgIdx}|${(a.quote || "").slice(0, 200)}|${a.comment || ""}`;
+  }
   function reapplyHighlights() {
     for (const a of annotations) {
       highlightOne(a);
     }
   }
+
+  // ---- Inline annotation popover (in-message) --------------------------
+  // Double-clicking a yellow highlighted span pops a small floating card
+  // showing the user's comment, Delete + Jump-here buttons. No need to
+  // navigate to the rail's Pending panel just to remember what you wrote.
+  let inlineAnnoPopover = null;
+  function closeInlineAnnoPopover() {
+    if (inlineAnnoPopover && inlineAnnoPopover.parentNode) {
+      inlineAnnoPopover.parentNode.removeChild(inlineAnnoPopover);
+    }
+    inlineAnnoPopover = null;
+  }
+  function showInlineAnnoPopover(markEl) {
+    closeInlineAnnoPopover();
+    const key = markEl.dataset.annoKey;
+    if (!key) return;
+    const a = annotations.find(x => annoKey(x) === key);
+    if (!a) return;
+    const r = markEl.getBoundingClientRect();
+    const pop = document.createElement("div");
+    pop.className = "inline-anno-popover";
+    pop.innerHTML = `
+      <div class="iap-comment">${escapeHtml(a.comment || "(no comment)")}</div>
+      <div class="iap-meta">msg #${a.msgIdx} · ${a.role || "?"}</div>
+      <div class="iap-actions">
+        <button data-act="copy">Copy comment</button>
+        <button data-act="del">Delete</button>
+        <button data-act="close">Close</button>
+      </div>`;
+    document.body.appendChild(pop);
+    // Position below the highlight, clamped to viewport.
+    const top = window.scrollY + r.bottom + 6;
+    const left = Math.min(
+      window.scrollX + r.left,
+      window.scrollX + window.innerWidth - pop.offsetWidth - 12,
+    );
+    pop.style.top = top + "px";
+    pop.style.left = Math.max(8, left) + "px";
+    inlineAnnoPopover = pop;
+    pop.querySelector("[data-act='close']").addEventListener("click", closeInlineAnnoPopover);
+    pop.querySelector("[data-act='copy']").addEventListener("click", () => {
+      navigator.clipboard.writeText(a.comment || "").then(() => showToast("Comment copied"));
+    });
+    pop.querySelector("[data-act='del']").addEventListener("click", () => {
+      const i = annotations.findIndex(x => annoKey(x) === key);
+      if (i >= 0) {
+        annotations.splice(i, 1);
+        saveAnnotations(currentSessionId, annotations);
+        refreshDock();
+        renderMessages();
+      }
+      closeInlineAnnoPopover();
+    });
+  }
+
+  // Delegated dblclick handler on the messages container — survives every
+  // re-render of the transcript (no need to re-bind after pagination).
+  // (Wired once at script init; see below at the bottom of the script.)
+  function wireInlineAnnoDblClick() {
+    if (wireInlineAnnoDblClick._wired) return;
+    wireInlineAnnoDblClick._wired = true;
+    messagesEl.addEventListener("dblclick", (e) => {
+      const mark = e.target.closest("mark.anno");
+      if (!mark) return;
+      e.preventDefault();
+      showInlineAnnoPopover(mark);
+    });
+    document.addEventListener("click", (e) => {
+      if (!inlineAnnoPopover) return;
+      if (inlineAnnoPopover.contains(e.target)) return;
+      if (e.target.closest("mark.anno")) return;
+      closeInlineAnnoPopover();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") closeInlineAnnoPopover();
+    });
+  }
+  wireInlineAnnoDblClick();
   function highlightOne(a) {
     const msgEls = messagesEl.querySelectorAll(`.msg[data-idx="${a.msgIdx}"]`);
     if (!msgEls.length) return;
@@ -2640,6 +3721,8 @@
     const mark = document.createElement("mark");
     mark.className = "anno";
     mark.title = a.comment;
+    // Stamp identity onto the DOM so the dock cards can scroll directly to it.
+    mark.dataset.annoKey = annoKey(a);
     try {
       if (startNode === endNode) {
         // Single text node — simple wrap
@@ -2667,16 +3750,36 @@
     dock.style.display = n === 0 ? "none" : "flex";
     annoList.innerHTML = "";
     annotations.forEach((a, i) => {
+      a = enrichAnnotationContext(a);
       const card = document.createElement("div");
       card.className = "anno-card";
+      card.dataset.annoKey = annoKey(a);
+      // Show the highlighted quote with surrounding context (prefix/suffix)
+      // dimmed and in italic so you can spot the broader sentence at a glance.
+      const beforeTxt = (a.prefix || "").slice(-220);
+      const afterTxt = (a.suffix || "").slice(0, 220);
+      const quoteFull = a.quote || "";
+      const quoteTxt = quoteFull.length > 240
+        ? quoteFull.slice(0, 240) + "…"
+        : quoteFull;
       card.innerHTML = `
-        <div class="quote">${escapeHtml(a.quote.slice(0, 160))}</div>
+        <div class="quote-block">${
+          beforeTxt ? `<span class="ctx before">…${escapeHtml(beforeTxt)}</span>` : ""
+        }<span class="quote-mark">${escapeHtml(quoteTxt)}</span>${
+          afterTxt ? `<span class="ctx after">${escapeHtml(afterTxt)}…</span>` : ""
+        }</div>
         <div class="comment">${escapeHtml(a.comment)}</div>
+        <div class="jump-hint">Click to jump to message #${a.msgIdx} ↗</div>
         <div class="actions"><button data-i="${i}" data-act="del">Delete</button></div>`;
+      card.addEventListener("click", (e) => {
+        if (e.target.closest("[data-act='del']")) return;
+        jumpToAnnotation(a);
+      });
       annoList.appendChild(card);
     });
     annoList.querySelectorAll("[data-act='del']").forEach(btn => {
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
         const i = Number(btn.dataset.i);
         annotations.splice(i, 1);
         saveAnnotations(currentSessionId, annotations);
@@ -2684,6 +3787,7 @@
         renderMessages();
       });
     });
+    renderRailPending();
   }
   dockToggle.addEventListener("click", () => {
     dockPanel.classList.toggle("open");
@@ -2720,14 +3824,22 @@
 
   function renderSentAnnotations(list) {
     sentCount.textContent = String(list.length);
+    if (railSentCount) railSentCount.textContent = String(list.length);
     if (list.length === 0) {
-      sentList.innerHTML = `<div class="sent-empty">No annotations sent yet for this session. Add some on the right, click "Send to Claude", then run <code>/review-annotations</code> in the CLI to see replies appear here.</div>`;
+      const emptyHtml = `<div class="sent-empty">No annotations sent yet for this session. Add some on the right, click "Send to Claude", then run <code>/rano</code> in the CLI to see replies appear here.</div>`;
+      sentList.innerHTML = emptyHtml;
+      if (railSentList) railSentList.innerHTML = `<div class="rail-empty">No sent annotations yet. Send some via the Pending tab.</div>`;
       return;
     }
     sentList.innerHTML = "";
+    if (railSentList) railSentList.innerHTML = "";
     list.forEach((a) => {
       const card = document.createElement("div");
-      card.className = "sent-card";
+      card.className = "sent-card anno-card";
+      // Parse the elementPath we POSTed (e.g. "msg:5:assistant") to get msgIdx
+      // so the Sent card can also jump to the original message location.
+      const pathMatch = String(a.elementPath || "").match(/^msg:(\d+)/);
+      const msgIdx = pathMatch ? Number(pathMatch[1]) : null;
       const quote = a.element || a.selectedText || "(no quote)";
       const comment = a.comment || "";
       // The `thread` field may come back as a JSON string or already-parsed array
@@ -2755,7 +3867,7 @@
 
       let repliesHtml = "";
       if (replies.length === 0) {
-        repliesHtml = `<div class="sent-reply"><span class="who">Claude:</span><span class="sent-reply-text" style="color:var(--muted);font-style:italic">No reply yet — run <code>/review-annotations</code> in the CLI.</span></div>`;
+        repliesHtml = `<div class="sent-reply"><span class="who">Claude:</span><span class="sent-reply-text" style="color:var(--muted);font-style:italic">No reply yet — run <code>/rano</code> in the CLI.</span></div>`;
       } else {
         repliesHtml = replies.map(r => {
           const role = r.role || "agent";
@@ -2765,13 +3877,55 @@
         }).join("");
       }
 
+      // Re-split the nearbyText we sent (prefix…suffix) so we can render the
+      // surrounding context dimmed around the highlighted quote, matching the
+      // pending-dock card layout.
+      const nearby = String(a.nearbyText || "");
+      let beforeTxt = "", afterTxt = "";
+      const sepIdx = nearby.indexOf("…");
+      if (sepIdx >= 0) {
+        beforeTxt = nearby.slice(0, sepIdx).trim().slice(-100);
+        afterTxt = nearby.slice(sepIdx + 1).trim().slice(0, 100);
+      }
+      const quoteShort = String(quote).slice(0, 400);
+      const jumpHint = msgIdx !== null
+        ? `<div class="jump-hint">Click to jump to message #${msgIdx} ↗</div>` : "";
       card.innerHTML = `
-        <div class="sent-quote">${escapeHtml(String(quote).slice(0, 400))}</div>
+        <div class="sent-quote">${
+          beforeTxt ? `<span class="ctx before" style="opacity:.55;font-style:italic">…${escapeHtml(beforeTxt)}</span>` : ""
+        }<span class="quote-mark" style="background:var(--selection-bg);color:var(--selection-fg);padding:0 2px;border-radius:2px">${escapeHtml(quoteShort)}</span>${
+          afterTxt ? `<span class="ctx after" style="opacity:.55;font-style:italic">${escapeHtml(afterTxt)}…</span>` : ""
+        }</div>
         <div class="sent-comment"><span class="who">You:</span><span>${escapeHtml(comment)}</span></div>
         ${repliesHtml}
         <div class="status-row">${statusPills.join("")}</div>
+        ${jumpHint}
       `;
+      if (msgIdx !== null) {
+        const synth = {
+          msgIdx,
+          quote: a.element || a.selectedText || "",
+          comment,
+          prefix: beforeTxt,
+          suffix: afterTxt,
+        };
+        card.addEventListener("click", () => jumpToAnnotation(synth));
+      }
       sentList.appendChild(card);
+      if (railSentList) {
+        const railCard = card.cloneNode(true);
+        if (msgIdx !== null) {
+          const synth = {
+            msgIdx,
+            quote: a.element || a.selectedText || "",
+            comment,
+            prefix: beforeTxt,
+            suffix: afterTxt,
+          };
+          railCard.addEventListener("click", () => jumpToAnnotation(synth));
+        }
+        railSentList.appendChild(railCard);
+      }
     });
   }
 
@@ -2818,10 +3972,10 @@
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          output: `Review requested: ${posted} annotation(s) for cc_session ${currentSessionId}. Run /review-annotations in that session.`,
+          output: `Review requested: ${posted} annotation(s) for cc_session ${currentSessionId}. Run /rano in that session.`,
         }),
       });
-      showToast(`Sent ${posted} annotation${posted === 1 ? "" : "s"} ✓  Run /review-annotations in your CLI`);
+      showToast(`Sent ${posted} annotation${posted === 1 ? "" : "s"} ✓  Run /rano in your CLI`);
       annotations = [];
       clearAnnotationsStorage(currentSessionId);
       refreshDock();
@@ -2874,6 +4028,9 @@
     } else {
       messagesEl.innerHTML = `<div class="empty">No sessions found yet.</div>`;
     }
+    // Now that every helper is defined, kick the rail's initial pane render.
+    if (railActiveSection === "sent") loadSentAnnotations();
+    if (railActiveSection === "pending") renderRailPending();
     // session-list-change events are multiplexed onto the per-session SSE
     // (see startSSE) — one connection per tab, not two. Fallback poll only.
     setInterval(loadSessions, 30000);

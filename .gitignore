@@ -12,3 +12,6 @@ npm-debug.log*
 .idea/
 .vscode/
 *.swp
+
+# Local headline + session metadata — personal data, don't push
+tools/response-viewer/data/
