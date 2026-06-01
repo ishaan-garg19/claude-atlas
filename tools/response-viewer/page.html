@@ -307,7 +307,12 @@
   }
   .rail-list .picker-item .pill.project,
   .rail-list .picker-item .pill.age { display: none; }
-  /* Buttons (ai + rename + resume) reveal on card hover to declutter the resting state. */
+  /* Action buttons reveal on card hover to declutter the resting state.
+     Pin button follows the same rule — the PINNED group label already tells
+     you which sessions are pinned, so the icon doesn't need to be visible at
+     rest. Exception: a pinned card always shows its pin so the unpin affordance
+     stays discoverable. */
+  .rail-list .picker-item .pin-btn,
   .rail-list .picker-item .rename-btn,
   .rail-list .picker-item .resume-btn,
   .rail-list .picker-item .ai-btn {
@@ -317,12 +322,17 @@
     opacity: 0;
     transition: opacity 0.12s, color 0.12s, border-color 0.12s, background 0.12s;
   }
+  .rail-list .picker-item:hover .pin-btn,
   .rail-list .picker-item:hover .rename-btn,
   .rail-list .picker-item:hover .resume-btn,
   .rail-list .picker-item:hover .ai-btn,
+  .rail-list .picker-item.active .pin-btn,
   .rail-list .picker-item.active .rename-btn,
   .rail-list .picker-item.active .resume-btn,
   .rail-list .picker-item.active .ai-btn { opacity: 1; }
+  /* Already-pinned cards keep their pin visible so unpin is one click away
+     without hunting for the hover target. */
+  .rail-list .picker-item .pin-btn.pinned { opacity: 1; }
   .rail-list .picker-group-head { padding: 8px 6px 4px; font-size: 9.5px; }
   .rail-list .picker-group-head.pinned { padding-top: 4px; }
   header {
@@ -477,6 +487,17 @@
     margin-bottom: 2px;
   }
   .picker-group-head.pinned::before { content: "📍 "; }
+  /* User-curated pinned sessions group (distinct from the per-tab "current"
+     pinned group above). Slightly warmer color so the two never get confused. */
+  .picker-group-head.user-pinned {
+    color: #d97706;
+    border-bottom: 1px dashed var(--border);
+    margin-bottom: 2px;
+  }
+  .picker-group-head.user-pinned::before { content: "📌 "; }
+  @media (prefers-color-scheme: dark) {
+    .picker-group-head.user-pinned { color: #fbbf24; }
+  }
   .picker-item {
     display: flex; flex-direction: column; gap: 6px;
     padding: 8px 10px;
@@ -548,6 +569,7 @@
   /* Resume + rename + ai-title buttons on the right side of each session
      card — icon only. Locked dimensions + overflow:hidden so any stray text
      can't break layout. */
+  .picker-item .pin-btn,
   .picker-item .resume-btn,
   .picker-item .rename-btn,
   .picker-item .ai-btn {
@@ -576,13 +598,27 @@
     text-overflow: clip;
     transition: color 0.12s, background 0.12s, border-color 0.12s;
   }
-  .picker-item .ai-btn { margin-left: auto; }
+  .picker-item .pin-btn { margin-left: auto; }
+  .picker-item .pin-btn:hover,
   .picker-item .resume-btn:hover,
   .picker-item .rename-btn:hover,
   .picker-item .ai-btn:hover {
     color: var(--accent);
     border-color: var(--accent);
     background: var(--accent-bg);
+  }
+  /* Pinned state — solid amber so it pops without yelling. */
+  .picker-item .pin-btn.pinned {
+    color: #d97706;
+    border-color: #d97706;
+    background: rgba(217, 119, 6, 0.14);
+  }
+  @media (prefers-color-scheme: dark) {
+    .picker-item .pin-btn.pinned {
+      color: #fbbf24;
+      border-color: #fbbf24;
+      background: rgba(251, 191, 36, 0.16);
+    }
   }
   .picker-item .resume-btn.copied {
     color: #1a7f37;
@@ -2640,19 +2676,26 @@
       ? byProject.filter(s => (s.preview || "").toLowerCase().includes(q) || s.id.includes(q))
       : byProject;
 
-    // Pin the active session at the top so it's always one click away,
-    // regardless of how recently it was updated.
+    // Lay out the rail in three tiers:
+    //   1. CURRENT  — whichever session this tab is bound to (always first).
+    //   2. PINNED   — user-curated favourites, sorted by most-recently-pinned.
+    //   3. Recency buckets — everything else, grouped by mtime.
+    // A session shown in CURRENT is never duplicated in PINNED or recency.
     const activeIdx = currentSessionId
       ? filtered.findIndex(s => s.id === currentSessionId)
       : -1;
-    const pinned = activeIdx >= 0 ? filtered[activeIdx] : null;
-    const rest = pinned
+    const current = activeIdx >= 0 ? filtered[activeIdx] : null;
+    const withoutCurrent = current
       ? filtered.slice(0, activeIdx).concat(filtered.slice(activeIdx + 1))
       : filtered;
+    const userPinned = withoutCurrent
+      .filter(s => s.pinned)
+      .sort((a, b) => (b.pinnedAt || 0) - (a.pinnedAt || 0));
+    const unpinned = withoutCurrent.filter(s => !s.pinned);
 
-    // Group remainder by recency
+    // Group unpinned by recency
     const groups = new Map();
-    for (const s of rest) {
+    for (const s of unpinned) {
       const b = bucket(s.mtime, now);
       if (!groups.has(b)) groups.set(b, []);
       groups.get(b).push(s);
@@ -2665,12 +2708,19 @@
         target.innerHTML = `<div class="picker-empty">No sessions match "${escapeHtml(q)}"</div>`;
         return;
       }
-      if (pinned) {
+      if (current) {
         const head = document.createElement("div");
         head.className = "picker-group-head pinned";
-        head.textContent = "CURRENT · pinned";
+        head.textContent = "CURRENT";
         target.appendChild(head);
-        target.appendChild(renderSessionCard(pinned, now));
+        target.appendChild(renderSessionCard(current, now));
+      }
+      if (userPinned.length) {
+        const head = document.createElement("div");
+        head.className = "picker-group-head user-pinned";
+        head.textContent = `PINNED · ${userPinned.length}`;
+        target.appendChild(head);
+        for (const s of userPinned) target.appendChild(renderSessionCard(s, now));
       }
       for (const [groupName, items] of groups) {
         const head = document.createElement("div");
@@ -2954,27 +3004,58 @@
       ? "Edit headline (clear to reset to auto-extracted)"
       : "Set a custom headline for this session";
     const aiTitle = "Generate a topic title with AI (Claude haiku)";
+    const pinTitle = s.pinned ? "Unpin this session" : "Pin this session to the top";
     btn.innerHTML = `
       <div class="preview">${escapeHtml(preview)}</div>
       <div class="pills-row">
         <div class="pills">${pills.join("")}</div>
+        <button class="pin-btn${s.pinned ? " pinned" : ""}" type="button" title="${escapeHtml(pinTitle)}">📌</button>
         <button class="ai-btn" type="button" title="${escapeHtml(aiTitle)}">✨</button>
         <button class="rename-btn" type="button" title="${escapeHtml(editTitle)}">${editIcon}</button>
         <button class="resume-btn" type="button" data-cmd="${escapeHtml(resumeCmd)}" title="Copy 'claude --resume' command for terminal · paste in your shell to resume this session">📋</button>
       </div>
     `;
     btn.addEventListener("click", (e) => {
-      // The resume / rename / AI buttons have their own handlers — don't
-      // activate the session if they click them.
+      // The action buttons have their own handlers — don't activate the
+      // session if they click them.
       if (e.target.closest(".resume-btn") ||
           e.target.closest(".rename-btn") ||
-          e.target.closest(".ai-btn")) return;
+          e.target.closest(".ai-btn") ||
+          e.target.closest(".pin-btn")) return;
       // Let the browser handle modifier-clicks and middle-click — they should
       // open the link in a new tab/window/background tab natively.
       if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
       e.preventDefault();
       closePicker();
       setActiveSession(s.id);
+    });
+    // Pin toggle: POST /pins/toggle. Optimistically flip the button so the
+    // user gets instant feedback; the SSE session-list-change will re-render
+    // the whole rail in the right group shortly after.
+    const pinBtn = btn.querySelector(".pin-btn");
+    pinBtn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (pinBtn.dataset.busy === "1") return;
+      pinBtn.dataset.busy = "1";
+      const wasPinned = pinBtn.classList.contains("pinned");
+      pinBtn.classList.toggle("pinned", !wasPinned);
+      try {
+        const r = await fetch("/pins/toggle", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: s.id }),
+        });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+        showToast(data.pinned ? "Pinned 📌" : "Unpinned");
+      } catch (err) {
+        // Revert on failure
+        pinBtn.classList.toggle("pinned", wasPinned);
+        showToast("Pin failed: " + (err.message || err), true);
+      } finally {
+        pinBtn.dataset.busy = "";
+      }
     });
     // Wire the copy-to-clipboard handler
     const resumeBtn = btn.querySelector(".resume-btn");

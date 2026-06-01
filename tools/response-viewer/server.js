@@ -83,6 +83,53 @@ function setHeadline(id, headline, source) {
 
 loadHeadlinesSync();
 
+// Persistent user-pinned sessions. Keyed by session id; each entry:
+//   { pinnedAt: number }
+// Pin is a binary state — sessions either are or aren't pinned. Order is
+// derived from `pinnedAt` desc (most-recently-pinned first).
+const PINS_PATH = path.join(HEADLINES_DIR, "pins.json");
+const pinsStore = new Map();
+let pinsDirty = false;
+let pinsFlushTimer = null;
+
+function loadPinsSync() {
+  try {
+    if (!fs.existsSync(HEADLINES_DIR)) fs.mkdirSync(HEADLINES_DIR, { recursive: true });
+    const raw = fs.readFileSync(PINS_PATH, "utf8");
+    const obj = JSON.parse(raw);
+    for (const [id, val] of Object.entries(obj)) {
+      if (val && typeof val.pinnedAt === "number") pinsStore.set(id, val);
+    }
+    console.log(`[pins] loaded ${pinsStore.size} entries`);
+  } catch (e) {
+    if (e.code !== "ENOENT") console.warn("[pins] load failed:", e.message);
+  }
+}
+
+function flushPins() {
+  if (!pinsDirty) return;
+  pinsDirty = false;
+  const obj = Object.fromEntries(pinsStore);
+  const tmp = PINS_PATH + ".tmp";
+  fs.writeFile(tmp, JSON.stringify(obj, null, 2), (err) => {
+    if (err) { console.warn("[pins] write failed:", err.message); return; }
+    fs.rename(tmp, PINS_PATH, (err2) => {
+      if (err2) console.warn("[pins] rename failed:", err2.message);
+    });
+  });
+}
+
+function markPinsDirty() {
+  pinsDirty = true;
+  if (pinsFlushTimer) return;
+  pinsFlushTimer = setTimeout(() => {
+    pinsFlushTimer = null;
+    flushPins();
+  }, 250);
+}
+
+loadPinsSync();
+
 // Defensive filter: hide JSONLs whose first user message is one of our own
 // internal LLM prompts (e.g. headline summarization). They're side-effect
 // transcripts from `claude -p` calls and have no value in the picker.
@@ -187,6 +234,7 @@ async function listSessions() {
       const id = f.replace(/\.jsonl$/, "");
       const project = p.name;
       const meta = await sessionPreview(full, st.mtimeMs);
+      const pin = pinsStore.get(id);
       sessions.push({
         id,
         project,
@@ -199,6 +247,8 @@ async function listSessions() {
         firstMessageAt: meta.firstMessageAt,
         lastMessageAt: meta.lastMessageAt,
         cwd: meta.cwd,
+        pinned: !!pin,
+        pinnedAt: pin ? pin.pinnedAt : null,
       });
     }
   }
@@ -854,6 +904,31 @@ async function handle(req, res) {
     send("complete", { total: targets.length, succeeded, failed });
     res.end();
     return;
+  }
+
+  // Persistent user pins. GET returns the whole map (id -> {pinnedAt}).
+  // POST /pins/toggle with {id} flips the pin state and broadcasts a
+  // session-list-change so all open Atlas tabs re-render the rail.
+  if (url.pathname === "/pins" && req.method === "GET") {
+    return json(res, 200, { pins: Object.fromEntries(pinsStore) });
+  }
+  if (url.pathname === "/pins/toggle" && req.method === "POST") {
+    let body;
+    try { body = JSON.parse(await readBody(req)); }
+    catch { return json(res, 400, { error: "invalid json body" }); }
+    const id = String(body.id || "").trim();
+    if (!id) return json(res, 400, { error: "id required" });
+    let pinned;
+    if (pinsStore.has(id)) {
+      pinsStore.delete(id);
+      pinned = false;
+    } else {
+      pinsStore.set(id, { pinnedAt: Date.now() });
+      pinned = true;
+    }
+    markPinsDirty();
+    broadcastSessionListChange();
+    return json(res, 200, { id, pinned, pinnedAt: pinsStore.get(id)?.pinnedAt || null });
   }
 
   // Persistent headlines: GET the whole store, POST {id, headline} to set a
