@@ -4,6 +4,10 @@
 # The "🌐 atlas" link uses OSC 8 hyperlinks (supported by iTerm2, Terminal.app,
 # Warp, Ghostty) — Cmd+click opens Atlas pinned to *this* session's ID, so
 # each window's link goes to its own session (not the last-viewed one).
+#
+# Atlas links use the atlas:// scheme so they always open in Google Chrome
+# (via the AtlasUrlHandler.app — install via tools/response-viewer/install-url-handler.sh).
+# If the handler isn't installed, macOS will prompt to choose an app.
 
 input=$(cat)
 model=$(echo "$input" | jq -r '.model.display_name')
@@ -34,10 +38,12 @@ if [ -z "$session_id" ]; then
 fi
 
 # Build the Atlas URL, pinned to this session if we have an ID.
+# atlas:// is routed by AtlasUrlHandler.app → forces Chrome regardless of the
+# system default browser. Fall back to http:// if you'd rather use the OS default.
 if [ -n "$session_id" ]; then
-  atlas_url="http://localhost:4850/?session=${session_id}"
+  atlas_url="atlas://localhost:4850/?session=${session_id}"
 else
-  atlas_url="http://localhost:4850/"
+  atlas_url="atlas://localhost:4850/"
 fi
 
 # Pending-annotation count from agentation MCP (port 4747).
