@@ -784,6 +784,74 @@ function fetchAgentation(pathOnAgentation) {
   });
 }
 
+// ----------------------------------------------------------------------------
+// Per-session file index: walks the session's cwd once, builds a
+// basename -> [absolute paths] map so the frontend can turn `Foo.scala:123`
+// references in chat into clickable jetbrains:// links pointing at the right
+// disk location (e.g. /…/work/Foo.scala vs /…/work_dupe/Foo.scala depending
+// on which tree the chat actually used).
+//
+// Cached for the server's lifetime — a redeploy rebuilds.
+// ----------------------------------------------------------------------------
+const FILE_INDEX_SKIP = new Set([
+  ".git", ".idea", ".vscode", ".cache", ".gradle",
+  "node_modules", "target", "build", "dist", "out",
+  ".venv", "venv", "__pycache__", ".pytest_cache",
+  ".next", ".nuxt", ".turbo", ".parcel-cache",
+  "vendor", "Pods",
+]);
+const FILE_INDEX_EXTS = new Set([
+  ".scala", ".sbt", ".java", ".kt", ".kts",
+  ".py", ".pyi",
+  ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
+  ".go", ".rs", ".rb", ".swift", ".m", ".mm", ".c", ".cc", ".cpp", ".h", ".hpp",
+  ".sh", ".bash", ".zsh",
+  ".html", ".css", ".scss", ".less",
+  ".md", ".sql", ".yaml", ".yml", ".json", ".toml", ".xml", ".proto",
+  ".tf", ".hcl",
+]);
+const FILE_INDEX_FILE_LIMIT = 80000;
+const fileIndexCache = new Map(); // sessionId -> Promise<{cwd, files, truncated, count}>
+
+async function buildFileIndex(cwd) {
+  const files = new Map();
+  let truncated = false;
+  let count = 0;
+  if (!cwd) return { cwd: null, files, truncated, count };
+  try { await fsp.access(cwd); } catch { return { cwd, files, truncated, count }; }
+  // Iterative BFS — keeps stack flat for huge trees.
+  const queue = [cwd];
+  while (queue.length) {
+    if (count >= FILE_INDEX_FILE_LIMIT) { truncated = true; break; }
+    const dir = queue.shift();
+    let entries;
+    try { entries = await fsp.readdir(dir, { withFileTypes: true }); } catch { continue; }
+    for (const ent of entries) {
+      if (count >= FILE_INDEX_FILE_LIMIT) { truncated = true; break; }
+      const full = path.join(dir, ent.name);
+      if (ent.isDirectory()) {
+        if (FILE_INDEX_SKIP.has(ent.name) || ent.name.startsWith(".")) continue;
+        queue.push(full);
+      } else if (ent.isFile()) {
+        const ext = path.extname(ent.name).toLowerCase();
+        if (!FILE_INDEX_EXTS.has(ext)) continue;
+        if (!files.has(ent.name)) files.set(ent.name, []);
+        files.get(ent.name).push(full);
+        count++;
+      }
+    }
+  }
+  return { cwd, files, truncated, count };
+}
+
+function getFileIndex(sessionId, cwd) {
+  const key = sessionId + "|" + (cwd || "");
+  if (!fileIndexCache.has(key)) {
+    fileIndexCache.set(key, buildFileIndex(cwd));
+  }
+  return fileIndexCache.get(key);
+}
+
 async function handle(req, res) {
   const url = new URL(req.url, "http://localhost");
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -809,6 +877,24 @@ async function handle(req, res) {
   if (url.pathname === "/sessions") {
     const sessions = await listSessions();
     return json(res, 200, { sessions });
+  }
+
+  // Per-session source-file index. Frontend uses this to turn `Foo.scala:123`
+  // refs in the chat into clickable jetbrains:// links pointing at the right
+  // checkout (work vs work_dupe) based on the session's cwd.
+  if (url.pathname === "/file-index") {
+    const id = url.searchParams.get("session");
+    if (!id) return json(res, 400, { error: "session query param required" });
+    const all = await listSessions();
+    const s = all.find(x => x.id === id);
+    if (!s) return json(res, 404, { error: "session not found" });
+    const idx = await getFileIndex(id, s.cwd);
+    return json(res, 200, {
+      cwd: idx.cwd,
+      truncated: idx.truncated,
+      count: idx.count,
+      files: Object.fromEntries(idx.files),
+    });
   }
 
   // LLM-generated headline (single session). Body: { id }. Returns the new

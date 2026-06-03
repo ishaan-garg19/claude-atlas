@@ -1176,6 +1176,40 @@
     background: #1a7f37;
     color: #fff;
   }
+  /* File-reference link: wraps an inline <code> when text matches the
+     "Foo.scala:123" pattern and resolves in the session's file index.
+     Visual cues: cursor flips from copy to pointer, soft underline on hover,
+     and a small ↗ glyph hinting external-open. */
+  a.file-ref {
+    text-decoration: none;
+    cursor: pointer;
+  }
+  a.file-ref > code {
+    cursor: pointer !important;
+    border-bottom: 1px dashed transparent;
+    transition: border-color 0.12s, background 0.15s, color 0.15s;
+  }
+  a.file-ref:hover > code {
+    background: rgba(217, 119, 6, 0.14);
+    color: #d97706;
+    border-bottom-color: #d97706;
+  }
+  a.file-ref::after {
+    content: "↗";
+    font-size: 9px;
+    opacity: 0.6;
+    margin-left: 2px;
+    vertical-align: super;
+  }
+  a.file-ref:hover::after { opacity: 1; color: #d97706; }
+  @media (prefers-color-scheme: dark) {
+    a.file-ref:hover > code {
+      background: rgba(251, 191, 36, 0.16);
+      color: #fbbf24;
+      border-bottom-color: #fbbf24;
+    }
+    a.file-ref:hover::after { color: #fbbf24; }
+  }
   .md ul, .md ol { padding-left: 22px; }
   .md blockquote {
     border-left: 4px solid var(--border);
@@ -2422,6 +2456,9 @@
   let annotations = [];
   let popup = null;
   let es = null;
+  // Per-session source-file index — { cwd, projectName, files: {basename: [abspath...]} }
+  // Populated lazily on session switch; null while loading or unavailable.
+  let fileIndex = null;
 
   const params = new URLSearchParams(location.search);
   // Accept both ?session= and ?cc_session= so the /atlas slash command
@@ -3479,11 +3516,40 @@
     annotations = loadAnnotations(sid);
     displayCount = DISPLAY_DEFAULT; // reset pagination on each session switch
     stickyBottom = true;
+    fileIndex = null; // drop stale index — fetched anew for the new session
     refreshDock();
     renderPicker();
     syncTabTitle();
+    // Kick off the file-index fetch in parallel with the transcript load.
+    // When it resolves, re-run the linkify pass against already-rendered DOM.
+    loadFileIndex(sid);
     await loadTranscript();
     startSSE();
+  }
+
+  // Fetches /file-index for the session and stashes it for the linkify pass.
+  // Best-effort — failures just leave fileIndex=null and file refs stay as
+  // copy-on-click inline code.
+  async function loadFileIndex(sid) {
+    if (!sid) return;
+    try {
+      const r = await fetch(`/file-index?session=${encodeURIComponent(sid)}`);
+      if (!r.ok) return;
+      const data = await r.json();
+      if (sid !== currentSessionId) return; // user switched away mid-fetch
+      // projectName: best-effort — the cwd's basename. Used as JetBrains
+      // project= parameter; falls back to absolute path resolution if the
+      // running IDE doesn't recognize the project name.
+      const projectName = data.cwd
+        ? data.cwd.split("/").filter(Boolean).pop() || ""
+        : "";
+      fileIndex = { cwd: data.cwd, projectName, files: data.files || {} };
+      // Re-run linkify on existing rendered messages — the first pass would
+      // have run before the index arrived and left everything as copy-text.
+      linkifyFileRefs();
+    } catch (err) {
+      console.warn("[file-index] load failed:", err);
+    }
   }
 
   // Keep the browser tab label in sync with the active session's headline.
@@ -4217,10 +4283,16 @@
       wrapper.appendChild(btn);
     });
 
-    // Inline code: click-to-copy
+    // First: turn any inline code that looks like a file reference into a
+    // clickable jetbrains:// link. Then anything NOT converted falls through
+    // to the click-to-copy behavior below.
+    linkifyFileRefs();
+
+    // Inline code: click-to-copy (skips elements already linkified above)
     document.querySelectorAll(".md code").forEach(code => {
       if (code.parentElement && code.parentElement.tagName === "PRE") return; // block code already handled
       if (code.dataset.copyWired) return;
+      if (code.dataset.fileRef) return; // already wrapped as a file-ref link
       code.dataset.copyWired = "1";
       code.title = "Click to copy";
       code.addEventListener("click", (e) => {
@@ -4238,6 +4310,70 @@
           showToast("Copy failed", true);
         });
       });
+    });
+  }
+
+  // Matches things like `Foo.scala:123`, `Foo.scala:123-456`, `path/to/Foo.scala:123`.
+  // Anchored at both ends so a code span containing a longer expression won't
+  // be misread as a file ref.
+  const FILE_REF_RE = /^([A-Za-z0-9_./-]*[A-Za-z0-9_-]+\.[A-Za-z][A-Za-z0-9]*):(\d+)(?:-(\d+))?$/;
+
+  function buildJetBrainsUrl(absPath, line) {
+    if (!fileIndex) return null;
+    const project = fileIndex.projectName || "";
+    // Absolute path works in both the jetbrains:// scheme and the legacy
+    // idea:// scheme. Keeping project= even when redundant — newer IDEs
+    // route faster when the project is identified.
+    const u = new URL("jetbrains://idea/navigate/reference");
+    if (project) u.searchParams.set("project", project);
+    u.searchParams.set("path", absPath);
+    u.searchParams.set("line", String(line));
+    return u.toString();
+  }
+
+  // Walks the rendered .md DOM and replaces qualifying inline-<code> elements
+  // with anchor links to IntelliJ. Idempotent — already-linkified spans skip.
+  function linkifyFileRefs() {
+    if (!fileIndex) return;
+    document.querySelectorAll(".md code").forEach(code => {
+      if (code.parentElement && code.parentElement.tagName === "PRE") return;
+      if (code.dataset.fileRef) return;
+      if (code.dataset.copyWired) return; // earlier pass already grabbed it
+      const raw = (code.textContent || "").trim();
+      const m = raw.match(FILE_REF_RE);
+      if (!m) return;
+      const [, pathStub, lineStr, endLineStr] = m;
+      const line = parseInt(lineStr, 10);
+      // Resolve pathStub against the session's file index.
+      let candidates;
+      if (pathStub.includes("/")) {
+        // path-fragment match: any abspath that ends with the stub
+        const all = Object.values(fileIndex.files).flat();
+        const slashed = "/" + pathStub.replace(/^\/+/, "");
+        candidates = all.filter(p => p.endsWith(slashed) || p === pathStub);
+      } else {
+        candidates = fileIndex.files[pathStub] || [];
+      }
+      if (candidates.length === 0) return; // unresolved — leave as copy-text
+      const abs = candidates[0];
+      const url = buildJetBrainsUrl(abs, line);
+      if (!url) return;
+      // Build the anchor in place of the <code>. Keep the <code> styling by
+      // nesting it inside the anchor — the existing CSS already styles
+      // .md code; we add a .file-ref class for the open-in-IDE affordance.
+      const a = document.createElement("a");
+      a.href = url;
+      a.className = "file-ref";
+      const lineLabel = endLineStr ? `${lineStr}-${endLineStr}` : lineStr;
+      const ambig = candidates.length > 1
+        ? `\n${candidates.length} matches — opening first:\n${candidates.slice(0, 5).join("\n")}`
+        : "";
+      a.title = `Open in IntelliJ: ${abs}:${lineLabel}${ambig}`;
+      a.dataset.fileRef = "1";
+      // Move the code node inside the anchor so existing styles still apply.
+      code.parentNode.insertBefore(a, code);
+      a.appendChild(code);
+      code.dataset.fileRef = "1";
     });
   }
 
