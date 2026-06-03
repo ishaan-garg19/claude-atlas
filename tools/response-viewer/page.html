@@ -4324,13 +4324,13 @@
 
   function buildJetBrainsUrl(absPath, line) {
     if (!fileIndex) return null;
-    const project = fileIndex.projectName || "";
-    // Absolute path works in both the jetbrains:// scheme and the legacy
-    // idea:// scheme. Keeping project= even when redundant — newer IDEs
-    // route faster when the project is identified.
-    const u = new URL("jetbrains://idea/navigate/reference");
-    if (project) u.searchParams.set("project", project);
-    u.searchParams.set("path", absPath);
+    // idea://open?file=…&line=… — IntelliJ's NATIVE scheme (declared in its
+    // Info.plist). The jetbrains://idea/navigate/reference form only works
+    // when JetBrains Toolbox is installed (Toolbox owns that scheme); a
+    // direct-download IntelliJ doesn't register it, and clicks silently
+    // no-op. idea:// works for both install types.
+    const u = new URL("idea://open");
+    u.searchParams.set("file", absPath);
     u.searchParams.set("line", String(line));
     return u.toString();
   }
