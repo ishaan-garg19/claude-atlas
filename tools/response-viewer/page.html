@@ -4296,6 +4296,10 @@
       code.dataset.copyWired = "1";
       code.title = "Click to copy";
       code.addEventListener("click", (e) => {
+        // If a later linkify pass converted this into a file-ref link, bail so
+        // the wrapping <a> navigates instead of us cancelling it. Without this
+        // guard the preventDefault() below kills the IntelliJ redirect.
+        if (code.dataset.fileRef) return;
         e.preventDefault();
         const text = code.textContent;
         navigator.clipboard.writeText(text).then(() => {
@@ -4338,7 +4342,11 @@
     document.querySelectorAll(".md code").forEach(code => {
       if (code.parentElement && code.parentElement.tagName === "PRE") return;
       if (code.dataset.fileRef) return;
-      if (code.dataset.copyWired) return; // earlier pass already grabbed it
+      // NOTE: we intentionally do NOT skip copyWired elements. The /file-index
+      // fetch usually resolves AFTER the first render (which already wired
+      // copy-on-click on every inline code). We still want to upgrade those to
+      // file-ref links; the copy handler bails at click-time when it sees the
+      // fileRef marker, so the two don't conflict.
       const raw = (code.textContent || "").trim();
       const m = raw.match(FILE_REF_RE);
       if (!m) return;
@@ -4374,6 +4382,9 @@
       code.parentNode.insertBefore(a, code);
       a.appendChild(code);
       code.dataset.fileRef = "1";
+      // Drop the stale copy affordance the first render may have set, so the
+      // tooltip reads "Open in IntelliJ" rather than "Click to copy".
+      code.removeAttribute("title");
     });
   }
 
