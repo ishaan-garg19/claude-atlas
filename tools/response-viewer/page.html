@@ -6485,13 +6485,21 @@
           } else {
             // ---- falling phase ----
             if (!b.piece) {
-              if (b.bag.length === 0) {
-                b.bag = ["I","O","T","S","Z","J","L"].sort(() => Math.random() - 0.5);
+              // Desync the boards: random initial stagger, then a random
+              // 0.4–3s pause between a lock and the next spawn, so boards
+              // never march in parallel.
+              if (b.spawnDelay === undefined) b.spawnDelay = Math.random() * 3500;
+              b.spawnDelay -= dt;
+              if (b.spawnDelay <= 0) {
+                if (b.bag.length === 0) {
+                  b.bag = ["I","O","T","S","Z","J","L"].sort(() => Math.random() - 0.5);
+                }
+                const type = b.bag.pop();
+                b.piece = { type, rot: 0, x: 3, y: -2.5 };
+                b.plan = tetrisPlan(b.grid, rows, type);
+                b.spawnDelay = 400 + Math.random() * 2600; // gap before the NEXT piece
+                if (!b.plan) { b.phase = "over"; b.phaseT = 0; b.piece = null; }
               }
-              const type = b.bag.pop();
-              b.piece = { type, rot: 0, x: 3, y: -2.5 };
-              b.plan = tetrisPlan(b.grid, rows, type);
-              if (!b.plan) { b.phase = "over"; b.phaseT = 0; b.piece = null; }
             }
             if (b.piece) {
               const p = b.piece;
