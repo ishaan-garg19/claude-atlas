@@ -6440,8 +6440,6 @@
             bag: [],
             piece: null,
             plan: null,
-            // cells per ms — ~280ms/cell, ±25% per board
-            speed: (1 / 280) * (0.75 + Math.random() * 0.5),
             moveTimer: 0,
             phase: "fall",
             phaseT: 0,
@@ -6495,9 +6493,15 @@
                   b.bag = ["I","O","T","S","Z","J","L"].sort(() => Math.random() - 0.5);
                 }
                 const type = b.bag.pop();
-                b.piece = { type, rot: 0, x: 3, y: -2.5 };
+                // Per-PIECE speed (160–700ms/cell): some pieces drift, some
+                // zip — kills the side-by-side parallel-fall look entirely.
+                b.piece = {
+                  type, rot: 0, x: 3, y: -2.5,
+                  speed: 1 / (160 + Math.random() * 540),
+                  dropping: false,
+                };
                 b.plan = tetrisPlan(b.grid, rows, type);
-                b.spawnDelay = 400 + Math.random() * 2600; // gap before the NEXT piece
+                b.spawnDelay = 500 + Math.random() * 4500; // gap before the NEXT piece
                 if (!b.plan) { b.phase = "over"; b.phaseT = 0; b.piece = null; }
               }
             }
@@ -6528,9 +6532,15 @@
                   if (!tetrisCollides(b.grid, rows, cellsNow, p.x + step, yLow)) p.x += step;
                 }
               }
+              // "Soft drop": once the piece is aligned over its target,
+              // sometimes slam it down 3× like a real player would. Adds
+              // organic rhythm variance across the boards.
+              if (!p.dropping && b.plan && p.rot === b.plan.rot && p.x === b.plan.x && Math.random() < 0.006) {
+                p.dropping = true;
+              }
               // Gravity: advance, but never let any part of the piece enter
               // an occupied row. Lock resting exactly on top of the stack.
-              const newY = p.y + dt * b.speed;
+              const newY = p.y + dt * p.speed * (p.dropping ? 3 : 1);
               const cells = TETRO_ROTS[p.type][p.rot];
               if (tetrisCollides(b.grid, rows, cells, p.x, Math.ceil(newY))) {
                 // Rest position: one row above the colliding row.
