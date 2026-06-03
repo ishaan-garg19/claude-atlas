@@ -6503,6 +6503,18 @@
                 b.plan = tetrisPlan(b.grid, rows, type);
                 b.spawnDelay = 500 + Math.random() * 4500; // gap before the NEXT piece
                 if (!b.plan) { b.phase = "over"; b.phaseT = 0; b.piece = null; }
+                else {
+                  // Hold steering until ~50% of the fall so rotations happen
+                  // mid-screen where they're visible — but never later than
+                  // "just enough time left to finish every move".
+                  const pc = TETRO_ROTS[type][b.plan.rot];
+                  let restY = -3;
+                  while (!tetrisCollides(b.grid, rows, pc, b.plan.x, restY + 1)) restY++;
+                  const steps = b.plan.rot + Math.abs(b.plan.x - 3) + 2; // moves + buffer
+                  const rowsDuringSteering = steps * 100 * b.piece.speed; // cadence 100ms
+                  const latestStart = restY - rowsDuringSteering - 1;
+                  b.steerStartY = Math.min(restY * 0.5, latestStart);
+                }
               }
             }
             if (b.piece) {
@@ -6512,9 +6524,10 @@
               // occupies. floor(y) lets the piece visually sink a row into
               // the stack (and slide sideways through blocks) while still
               // counting as legal: that's the fall-through bug.
-              // Bot steering: one action per 100ms (rotate first, then slide)
+              // Bot steering: one action per 100ms (rotate first, then slide).
+              // Gated on steerStartY so the moves happen mid-fall, visibly.
               b.moveTimer += dt;
-              if (b.plan && b.moveTimer >= 100) {
+              if (b.plan && p.y >= (b.steerStartY ?? -3) && b.moveTimer >= 100) {
                 b.moveTimer = 0;
                 const cellsNow = TETRO_ROTS[p.type][p.rot];
                 const yLow = Math.ceil(p.y);
