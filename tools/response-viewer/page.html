@@ -2276,6 +2276,7 @@
   <button data-theme="ripples">💧 Wave interference</button>
   <button data-theme="flock">🐦 Flock</button>
   <button data-theme="rain">🌧️ Matrix rain</button>
+  <button data-theme="tetris">🧱 Tetris</button>
   <button data-theme="off">⬛ None (plain bg)</button>
 </div>
 
@@ -4317,10 +4318,11 @@
     });
   }
 
-  // Matches things like `Foo.scala:123`, `Foo.scala:123-456`, `path/to/Foo.scala:123`.
-  // Anchored at both ends so a code span containing a longer expression won't
-  // be misread as a file ref.
-  const FILE_REF_RE = /^([A-Za-z0-9_./-]*[A-Za-z0-9_-]+\.[A-Za-z][A-Za-z0-9]*):(\d+)(?:-(\d+))?$/;
+  // Matches `Foo.scala:123`, `Foo.scala:123-456`, `path/to/Foo.scala:123`,
+  // AND bare names like `Foo.scala` (no line — opens the file at its last
+  // cursor position). Anchored at both ends so a code span containing a
+  // longer expression won't be misread as a file ref.
+  const FILE_REF_RE = /^([A-Za-z0-9_./-]*[A-Za-z0-9_-]+\.[A-Za-z][A-Za-z0-9]*)(?::(\d+)(?:-(\d+))?)?$/;
 
   function buildJetBrainsUrl(absPath, line) {
     if (!fileIndex) return null;
@@ -4331,7 +4333,7 @@
     // no-op. idea:// works for both install types.
     const u = new URL("idea://open");
     u.searchParams.set("file", absPath);
-    u.searchParams.set("line", String(line));
+    if (line != null) u.searchParams.set("line", String(line));
     return u.toString();
   }
 
@@ -4351,7 +4353,7 @@
       const m = raw.match(FILE_REF_RE);
       if (!m) return;
       const [, pathStub, lineStr, endLineStr] = m;
-      const line = parseInt(lineStr, 10);
+      const line = lineStr ? parseInt(lineStr, 10) : null;
       // Resolve pathStub against the session's file index.
       let candidates;
       if (pathStub.includes("/")) {
@@ -4372,11 +4374,11 @@
       const a = document.createElement("a");
       a.href = url;
       a.className = "file-ref";
-      const lineLabel = endLineStr ? `${lineStr}-${endLineStr}` : lineStr;
+      const lineLabel = endLineStr ? `:${lineStr}-${endLineStr}` : (lineStr ? `:${lineStr}` : "");
       const ambig = candidates.length > 1
         ? `\n${candidates.length} matches — opening first:\n${candidates.slice(0, 5).join("\n")}`
         : "";
-      a.title = `Open in IntelliJ: ${abs}:${lineLabel}${ambig}`;
+      a.title = `Open in IntelliJ: ${abs}${lineLabel}${ambig}`;
       a.dataset.fileRef = "1";
       // Move the code node inside the anchor so existing styles still apply.
       code.parentNode.insertBefore(a, code);
@@ -6345,6 +6347,244 @@
       },
     };
 
+    // ----- Tetris theme -----
+    // Real Tetris, self-playing, dark-only. The viewport is tiled with N
+    // standard 10-column boards side by side (a single 40+ column board
+    // would almost never complete a row — clears are the whole show).
+    // Each board: 7-bag randomizer, collision, locking, line-clear flash +
+    // collapse, and a greedy bot (minimize holes/height/bumpiness, chase
+    // clears) steering pieces with gradual moves. Game over → fade → reset.
+    const TETRO = {
+      I: { color: "#67e8f9", cells: [[0,1],[1,1],[2,1],[3,1]] },
+      O: { color: "#fbbf24", cells: [[1,0],[2,0],[1,1],[2,1]] },
+      T: { color: "#c4b5fd", cells: [[1,0],[0,1],[1,1],[2,1]] },
+      S: { color: "#6ee7b7", cells: [[1,0],[2,0],[0,1],[1,1]] },
+      Z: { color: "#fda4af", cells: [[0,0],[1,0],[1,1],[2,1]] },
+      J: { color: "#93c5fd", cells: [[0,0],[0,1],[1,1],[2,1]] },
+      L: { color: "#fcd34d", cells: [[2,0],[0,1],[1,1],[2,1]] },
+    };
+    // Precompute 4 rotations per type (rotate within a 4x4 box: (x,y)→(3-y,x)
+    // for I/O's box, 3x3 box (x,y)→(2-y,x) for the rest), normalized.
+    const TETRO_ROTS = {};
+    for (const [t, def] of Object.entries(TETRO)) {
+      const box = (t === "I" || t === "O") ? 4 : 3;
+      const rots = [];
+      let cur = def.cells;
+      for (let r = 0; r < 4; r++) {
+        rots.push(cur.map(([x, y]) => [x, y]));
+        cur = cur.map(([x, y]) => [box - 1 - y, x]);
+      }
+      TETRO_ROTS[t] = rots;
+    }
+    const TETRIS_COLS = 10;
+
+    function tetrisCollides(grid, rows, cells, px, py) {
+      for (const [cx, cy] of cells) {
+        const x = px + cx, y = py + cy;
+        if (x < 0 || x >= TETRIS_COLS || y >= rows) return true;
+        if (y >= 0 && grid[y][x]) return true;
+      }
+      return false;
+    }
+
+    // Greedy bot: try every rotation × column, hard-drop in a cloned grid,
+    // score the result. Classic Dellacherie-lite weights.
+    function tetrisPlan(grid, rows, type) {
+      let best = null;
+      for (let rot = 0; rot < 4; rot++) {
+        const cells = TETRO_ROTS[type][rot];
+        for (let px = -2; px < TETRIS_COLS + 2; px++) {
+          if (tetrisCollides(grid, rows, cells, px, -3)) continue;
+          let py = -3;
+          while (!tetrisCollides(grid, rows, cells, px, py + 1)) py++;
+          if (cells.some(([, cy]) => py + cy < 0)) continue; // locks above ceiling
+          // Clone + place
+          const g = grid.map(r => r.slice());
+          for (const [cx, cy] of cells) g[py + cy][px + cx] = 1;
+          // Metrics
+          let lines = 0;
+          for (let y = 0; y < rows; y++) if (g[y].every(Boolean)) lines++;
+          let holes = 0, aggH = 0, bump = 0, prevH = -1;
+          for (let x = 0; x < TETRIS_COLS; x++) {
+            let top = -1;
+            for (let y = 0; y < rows; y++) if (g[y][x]) { top = y; break; }
+            const colH = top === -1 ? 0 : rows - top;
+            aggH += colH;
+            if (top !== -1) for (let y = top + 1; y < rows; y++) if (!g[y][x]) holes++;
+            if (prevH >= 0) bump += Math.abs(colH - prevH);
+            prevH = colH;
+          }
+          // Heavier hole penalty + lighter bumpiness = tighter, flatter
+          // stacking ("perfect pattern") with clears as the top priority.
+          const score = lines * 150 - holes * 14 - aggH * 0.5 - bump * 0.55;
+          if (!best || score > best.score) best = { rot, x: px, score };
+        }
+      }
+      return best; // null → nowhere to place → game over
+    }
+
+    const tetris = {
+      init(state) {
+        const cell = Math.max(22, Math.min(40, Math.floor(h / 24)));
+        const boardW = cell * TETRIS_COLS;
+        const n = Math.max(1, Math.ceil(w / boardW));
+        const rows = Math.max(10, Math.floor(h / cell));
+        state.cell = cell;
+        state.rows = rows;
+        state.lastT = performance.now();
+        state.boards = [];
+        for (let i = 0; i < n; i++) {
+          state.boards.push({
+            x0: i * boardW,
+            grid: Array.from({ length: rows }, () => Array(TETRIS_COLS).fill(null)),
+            bag: [],
+            piece: null,
+            plan: null,
+            // cells per ms — ~420ms/cell, ±25% per board
+            speed: (1 / 420) * (0.75 + Math.random() * 0.5),
+            moveTimer: 0,
+            phase: "fall",
+            phaseT: 0,
+            flashRows: [],
+            fade: 1,
+          });
+        }
+      },
+      tick(ctx, state) {
+        const now = performance.now();
+        const dt = Math.min(100, now - state.lastT); // clamp tab-resume jumps
+        state.lastT = now;
+        // Dark-only backdrop — intentionally ignores light mode.
+        ctx.fillStyle = "#06080d";
+        ctx.fillRect(0, 0, w, h);
+        const { cell, rows } = state;
+        for (const b of state.boards) {
+          // Faint board separator
+          ctx.fillStyle = "rgba(255,255,255,0.025)";
+          ctx.fillRect(b.x0 + cell * TETRIS_COLS - 1, 0, 1, h);
+
+          if (b.phase === "over") {
+            b.phaseT += dt;
+            b.fade = Math.max(0, 1 - b.phaseT / 800);
+            if (b.phaseT >= 800) {
+              b.grid = Array.from({ length: rows }, () => Array(TETRIS_COLS).fill(null));
+              b.piece = null; b.plan = null; b.phase = "fall"; b.phaseT = 0; b.fade = 1;
+            }
+          } else if (b.phase === "flash") {
+            b.phaseT += dt;
+            if (b.phaseT >= 260) {
+              // Collapse flashed rows
+              for (const y of b.flashRows.sort((a, c) => a - c)) {
+                b.grid.splice(y, 1);
+                b.grid.unshift(Array(TETRIS_COLS).fill(null));
+              }
+              b.flashRows = [];
+              b.phase = "fall";
+              b.phaseT = 0;
+            }
+          } else {
+            // ---- falling phase ----
+            if (!b.piece) {
+              if (b.bag.length === 0) {
+                b.bag = ["I","O","T","S","Z","J","L"].sort(() => Math.random() - 0.5);
+              }
+              const type = b.bag.pop();
+              b.piece = { type, rot: 0, x: 3, y: -2.5 };
+              b.plan = tetrisPlan(b.grid, rows, type);
+              if (!b.plan) { b.phase = "over"; b.phaseT = 0; b.piece = null; }
+            }
+            if (b.piece) {
+              const p = b.piece;
+              // The piece renders at FRACTIONAL y, so every collision check
+              // must use ceil(y) — the lowest row any part of it visually
+              // occupies. floor(y) lets the piece visually sink a row into
+              // the stack (and slide sideways through blocks) while still
+              // counting as legal: that's the fall-through bug.
+              // Bot steering: one action per 100ms (rotate first, then slide)
+              b.moveTimer += dt;
+              if (b.plan && b.moveTimer >= 100) {
+                b.moveTimer = 0;
+                const cellsNow = TETRO_ROTS[p.type][p.rot];
+                const yLow = Math.ceil(p.y);
+                if (p.rot !== b.plan.rot) {
+                  const nr = (p.rot + 1) % 4;
+                  const nc = TETRO_ROTS[p.type][nr];
+                  // basic wall kick: try 0, ±1, ±2
+                  for (const k of [0, -1, 1, -2, 2]) {
+                    if (!tetrisCollides(b.grid, rows, nc, p.x + k, yLow)) {
+                      p.rot = nr; p.x += k; break;
+                    }
+                  }
+                } else if (p.x !== b.plan.x) {
+                  const step = p.x < b.plan.x ? 1 : -1;
+                  if (!tetrisCollides(b.grid, rows, cellsNow, p.x + step, yLow)) p.x += step;
+                }
+              }
+              // Gravity: advance, but never let any part of the piece enter
+              // an occupied row. Lock resting exactly on top of the stack.
+              const newY = p.y + dt * b.speed;
+              const cells = TETRO_ROTS[p.type][p.rot];
+              if (tetrisCollides(b.grid, rows, cells, p.x, Math.ceil(newY))) {
+                // Rest position: one row above the colliding row.
+                const lockY = Math.ceil(newY) - 1;
+                let above = false;
+                for (const [cx, cy] of cells) {
+                  const gy = lockY + cy;
+                  if (gy < 0) { above = true; continue; }
+                  b.grid[gy][p.x + cx] = TETRO[p.type].color;
+                }
+                b.piece = null; b.plan = null;
+                if (above) { b.phase = "over"; b.phaseT = 0; }
+                else {
+                  const full = [];
+                  for (let y = 0; y < rows; y++) if (b.grid[y].every(Boolean)) full.push(y);
+                  if (full.length) { b.flashRows = full; b.phase = "flash"; b.phaseT = 0; }
+                }
+              } else {
+                p.y = newY;
+              }
+            }
+          }
+
+          // ---- draw board ----
+          const flashOn = b.phase === "flash" && (Math.floor(b.phaseT / 65) % 2 === 0);
+          for (let y = 0; y < rows; y++) {
+            const isFlash = b.flashRows.includes(y);
+            for (let x = 0; x < TETRIS_COLS; x++) {
+              const col = b.grid[y][x];
+              if (!col) continue;
+              if (isFlash && flashOn) {
+                ctx.fillStyle = `rgba(255,255,255,${0.85 * b.fade})`;
+              } else {
+                ctx.fillStyle = hexToRgba(col, 0.30 * b.fade);
+              }
+              ctx.fillRect(b.x0 + x * cell + 1, y * cell + 1, cell - 2, cell - 2);
+            }
+          }
+          // Falling piece — brighter, soft glow
+          if (b.piece && b.phase === "fall") {
+            const p = b.piece;
+            const cells = TETRO_ROTS[p.type][p.rot];
+            const color = TETRO[p.type].color;
+            ctx.save();
+            ctx.shadowColor = color;
+            ctx.shadowBlur = 12;
+            ctx.fillStyle = hexToRgba(color, 0.55);
+            for (const [cx, cy] of cells) {
+              const gy = p.y + cy;
+              if (gy < -1) continue;
+              ctx.fillRect(b.x0 + (p.x + cx) * cell + 1, gy * cell + 1, cell - 2, cell - 2);
+            }
+            ctx.restore();
+          }
+        }
+      },
+    };
+    function hexToRgba(hex, a) {
+      const n = parseInt(hex.slice(1), 16);
+      return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+    }
+
     // ----- Off / None (plain near-black canvas) -----
     // Pure #000 was too harsh — it pushed text contrast to a painful level
     // through the glass bubbles. Using a soft near-black instead so the
@@ -6357,7 +6597,7 @@
       },
     };
 
-    const themes = { constellation, galaxy, aurora, solarSystem, dna, ripples, flock, rain, audio, off };
+    const themes = { constellation, galaxy, aurora, solarSystem, dna, ripples, flock, rain, tetris, audio, off };
     let currentName = localStorage.getItem("viewer:bgTheme");
     // `audio` was retired from the picker — silently migrate any old saved
     // value so users don't get an unexpected mic/share prompt on next load.
@@ -6470,6 +6710,7 @@
         ripples: "💧 Wave interference",
         flock: "🐦 Flock",
         rain: "🌧️ Matrix rain",
+        tetris: "🧱 Tetris",
         off: "⬛ None",
       };
       return labels[name] || name;
